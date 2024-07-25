@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "buildable"
+dynamic = ["version"]
+description = 'Combine and edit Ableton Live sets (.als files).'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = ["ableton", "live"]
+authors = [
+  { name = "Kevin Montag", email = "kmontag@cs.stanford.edu" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/kmontag/buildable#readme"
+Issues = "https://github.com/kmontag/buildable/issues"
+Source = "https://github.com/kmontag/buildable"
+
+[tool.hatch.version]
+path = "src/buildable/__about__.py"
+
+[tool.hatch.envs.hatch-test]
+extra-dependencies = [
+  "pytest-datadir~=1.5.0",
+  "typeguard~=4.3.0",
+]
+
+[tool.hatch.envs.types]
+template = "hatch-test"
+extra-dependencies = [
+  "mypy>=1.0.0",
+  "typeguard~=4.3.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/buildable tests}"
+
+[tool.coverage.run]
+source_pkgs = ["buildable", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/buildable/__about__.py",
+]
+
+[tool.coverage.paths]
+buildable = ["src/buildable", "*/buildable/src/buildable"]
+tests = ["tests", "*/buildable/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.isort]
+known_first_party = ["buildable"]
+
+[tool.ruff]
+# Explicitly declare default hatch settings, see
+# https://hatch.pypa.io/1.9/config/static-analysis/#default-settings.
+line-length = 120
+builtins = ["buildable"]
+
+[tool.ruff.format]
+# More explicit default hatch settings.
+docstring-code-format = true
+docstring-code-line-length = 80
+
+[tool.ruff.lint]
+extend-ignore = [
+  # Turn off strict max line length; B950 allows for exceeding the max
+  # line length in some cases.
+  "E501",
+  # Allow relative imports.
+  "TID252",
+]
