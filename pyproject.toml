@@ -24,7 +24,9 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = []
+dependencies = [
+  "lxml~=5.2.2",
+]
 
 [project.urls]
 Documentation = "https://github.com/kmontag/buildable#readme"
@@ -43,6 +45,7 @@ extra-dependencies = [
 [tool.hatch.envs.types]
 template = "hatch-test"
 extra-dependencies = [
+  "lxml-stubs~=0.5.1",
   "mypy>=1.0.0",
   "typeguard~=4.3.0",
 ]
@@ -68,9 +71,6 @@ exclude_lines = [
   "if TYPE_CHECKING:",
 ]
 
-[tool.isort]
-known_first_party = ["buildable"]
-
 [tool.ruff]
 # Explicitly declare default hatch settings, see
 # https://hatch.pypa.io/1.9/config/static-analysis/#default-settings.
@@ -90,3 +90,6 @@ extend-ignore = [
   # Allow relative imports.
   "TID252",
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["buildable"]

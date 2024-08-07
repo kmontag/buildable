@@ -1,5 +1,10 @@
 __pycache__/
 /.mypy-cache/
+/.coverage
 
 # Builds.
 /dist/
+
+# Ableton project artifacts.
+/tests/test_live_set/Icon*
+/tests/test_live_set/Backup/
