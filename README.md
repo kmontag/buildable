@@ -2,6 +2,8 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/buildable.svg)](https://pypi.org/project/buildable)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/buildable.svg)](https://pypi.org/project/buildable)
+![Test & Release](https://github.com/kmontag/buildable/actions/workflows/test_and_release.yml/badge.svg?branch=main)
+[![codecov](https://codecov.io/github/kmontag/alpax/graph/badge.svg?token=5C1JO6YTDL)](https://codecov.io/github/kmontag/buildable)
 
 ---
 
