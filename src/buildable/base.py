@@ -143,6 +143,10 @@ class AbletonDocumentObject:
             # Write the pretty-printed content.
             gzipped_output.write(pretty_xml_str)
 
+    def write_to_file(self, filename: str | os.PathLike) -> None:
+        with open(filename, "wb") as f:
+            self.write(f)
+
 
 class ElementObject(abc.ABC):  # noqa: B024
     TAG: str = NotImplemented
