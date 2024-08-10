@@ -38,9 +38,9 @@ class GenericMutableProperty(Protocol[_T]):
 
 def xml_property(
     attrib: str,
-    property_type: "type[_V]",
-) -> Callable[[Callable[[_T], "_Element"]], GenericMutableProperty[_V]]:
-    def inner(fn: Callable[[_T], "_Element"]) -> GenericMutableProperty[_V]:
+    property_type: type[_V],
+) -> Callable[[Callable[[_T], _Element]], GenericMutableProperty[_V]]:
+    def inner(fn: Callable[[_T], _Element]) -> GenericMutableProperty[_V]:
         """Define a property which takes its value from an element in an Ableton XML document."""
 
         def getter(instance: _T) -> _V:
@@ -75,10 +75,10 @@ def xml_property(
 
 def child_element_object_property(
     property_type: type[_E2],
-) -> Callable[[Callable[[_E], "_Element"]], GenericProperty[_E2]]:
-    def inner(fn: Callable[[_E], "_Element"]) -> GenericProperty[_E2]:
+) -> Callable[[Callable[[_E], _Element]], GenericProperty[_E2]]:
+    def inner(fn: Callable[[_E], _Element]) -> GenericProperty[_E2]:
         def getter(instance: _E) -> _E2:
-            element: "_Element" = fn(instance)
+            element: _Element = fn(instance)
             child_elements = element.findall(property_type.TAG)
             if len(child_elements) == 0:
                 msg = f"Child element of type '{property_type.TAG}' not found"
@@ -117,10 +117,10 @@ class AbletonDocumentObject:
         if len(root) != 1:
             msg = "The data must contain exactly one nested element"
             raise ValueError(msg)
-        self._element: "_Element" = root[0]
+        self._element: _Element = root[0]
 
     @property
-    def element(self) -> "_Element":
+    def element(self) -> _Element:
         """The XML element representing the document's primary object."""
         return self._element
 
@@ -147,12 +147,12 @@ class AbletonDocumentObject:
 class ElementObject(abc.ABC):  # noqa: B024
     TAG: str = NotImplemented
 
-    def __init__(self, element: "_Element"):
+    def __init__(self, element: _Element):
         if element.tag != self.TAG:
             msg = f"Expected element of type '{self.TAG}', but got '{element.tag}'"
             raise ValueError(msg)
         self._element = element
 
     @property
-    def element(self) -> "_Element":
+    def element(self) -> _Element:
         return self._element

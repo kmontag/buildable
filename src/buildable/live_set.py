@@ -46,6 +46,14 @@ class LiveSet(AbletonDocumentObject):
                 raise ValueError(msg)
 
     @property
+    def main_track(self) -> MainTrack:
+        return MainTrack(_presence(self._element.find("MainTrack")))
+
+    @main_track.setter
+    def main_track(self, main_track: MainTrack):
+        self.insert_tracks(main_track=main_track)
+
+    @property
     def primary_tracks(self) -> Sequence[PrimaryTrack]:
         return [PrimaryTrack.from_element(track) for track in self._tracks_element if track.tag != ReturnTrack.TAG]
 
@@ -56,25 +64,25 @@ class LiveSet(AbletonDocumentObject):
             for index, track in enumerate(t for t in self._tracks_element if t.tag == ReturnTrack.TAG)
         ]
 
-    @property
-    def main_track(self) -> MainTrack:
-        return MainTrack(_presence(self._element.find("MainTrack")))
-
-    @main_track.setter
-    def main_track(self, main_track: MainTrack):
-        self.insert_tracks(main_track=main_track)
-
     @xml_property(attrib="Value", property_type=int)
     def _next_pointee_id(self) -> _Element:
         return _presence(self._element.find("NextPointeeId"))
 
     @cached_property
+    def sends_pre(self) -> SendsPre:
+        return SendsPre(_presence(self._element.find(SendsPre.TAG)))
+
+    @cached_property
     def _tracks_element(self) -> _Element:
         return _presence(self._element.find("Tracks"))
 
-    @cached_property
-    def sends_pre(self) -> "SendsPre":
-        return SendsPre(_presence(self._element.find(SendsPre.TAG)))
+    def delete_primary_track(self, index: int) -> None:
+        element_to_delete = self.primary_tracks[index].element
+        self._tracks_element.remove(element_to_delete)
+
+    def delete_return_track(self, index: int) -> None:
+        element_to_delete = self.return_tracks[index].element
+        self._tracks_element.remove(element_to_delete)
 
     def insert_primary_tracks(self, primary_tracks: Sequence[PrimaryTrack], index: int = 0) -> None:
         self.insert_tracks(primary_tracks=primary_tracks, primary_tracks_index=index)
@@ -122,7 +130,7 @@ class LiveSet(AbletonDocumentObject):
         self._update_track_ids(mixer_tracks)
         self._update_linked_track_group_ids(tracks)
 
-        def add_blank_send(index: int, sends: "Sends") -> None:
+        def add_blank_send(index: int, sends: Sends) -> None:
             automation_target_id = self._next_pointee_id
             self._next_pointee_id += 1
             modulation_target_id = self._next_pointee_id
@@ -143,7 +151,7 @@ class LiveSet(AbletonDocumentObject):
         # inserted.
         for track in mixer_tracks:
             sends = track.device_chain.mixer.sends
-            external_track_send_holders: "list[TrackSendHolder]" = [
+            external_track_send_holders: list[TrackSendHolder] = [
                 track.device_chain.mixer.sends.track_send_holders[return_track.send_index]
                 for return_track in return_tracks
             ]
@@ -185,7 +193,7 @@ class LiveSet(AbletonDocumentObject):
             self._element[index] = main_track.element
 
     def _update_track_ids(self, tracks: Sequence[MixerTrack]) -> None:
-        next_track_id = max([t.id for t in [*self.primary_tracks, *self.return_tracks]]) + 1
+        next_track_id = max([0, *(t.id for t in [*self.primary_tracks, *self.return_tracks])]) + 1
         track_id_replacements: dict[int, int] = {}
 
         # Update individual track IDs.
@@ -283,7 +291,7 @@ class SendsPre(ElementObject):
     TAG = "SendsPre"
 
     @property
-    def send_pre_bools(self) -> "Sequence[SendPreBool]":
+    def send_pre_bools(self) -> Sequence[SendPreBool]:
         # All children should be of this type.
         return [SendPreBool(child) for child in self.element]
 
@@ -358,11 +366,11 @@ class MidiControllerRange(ElementObject):
     TAG = "MidiControllerRange"
 
     @xml_property(attrib="Value", property_type=float)
-    def min(self) -> "_Element":
+    def min(self) -> _Element:
         return _presence(self.element.find("Min"))
 
     @xml_property(attrib="Value", property_type=float)
-    def max(self) -> "_Element":
+    def max(self) -> _Element:
         return _presence(self.element.find("Max"))
 
 
@@ -370,14 +378,14 @@ class Send(ElementObject):
     TAG = "Send"
 
     # Live saves "zero-valued" sends with this slightly-nonzero value.
-    _MIN_VALUE_STR: "Final[str]" = "0.0003162277571"
+    _MIN_VALUE_STR: Final[str] = "0.0003162277571"
 
     @child_element_object_property(property_type=MidiControllerRange)
-    def midi_controller_range(self) -> "_Element":
+    def midi_controller_range(self) -> _Element:
         return self.element
 
     @classmethod
-    def create(cls, *, automation_target_id: int, modulation_target_id: int) -> "Self":
+    def create(cls, *, automation_target_id: int, modulation_target_id: int) -> Self:
         """Create a new Send element.
 
         The element's value will be set to the minimum allowed (though this can be adjusted later by setting the
@@ -404,7 +412,7 @@ class Send(ElementObject):
         return cls(fromstring(xml_str))
 
     @xml_property(attrib="Value", property_type=float)
-    def value(self) -> "_Element":
+    def value(self) -> _Element:
         return _presence(self.element.find("Manual"))
 
 
@@ -412,15 +420,15 @@ class TrackSendHolder(ElementObject):
     TAG = "TrackSendHolder"
 
     @xml_property(attrib="Id", property_type=int)
-    def id(self) -> "_Element":
+    def id(self) -> _Element:
         return self.element
 
     @xml_property(attrib="Value", property_type=bool)
-    def enabled_by_user(self) -> "_Element":
+    def enabled_by_user(self) -> _Element:
         return _presence(self.element.find("EnabledByUser"))
 
     @child_element_object_property(property_type=Send)
-    def send(self) -> "_Element":
+    def send(self) -> _Element:
         return self.element
 
 
@@ -428,7 +436,7 @@ class Sends(ElementObject):
     TAG = "Sends"
 
     @property
-    def track_send_holders(self) -> "Sequence[TrackSendHolder]":
+    def track_send_holders(self) -> Sequence[TrackSendHolder]:
         # This should be the only child element type.
         return [TrackSendHolder(child) for child in self.element]
 
