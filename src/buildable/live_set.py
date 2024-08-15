@@ -295,7 +295,7 @@ class SendsPre(ElementObject):
         # All children should be of this type.
         return [SendPreBool(child) for child in self.element]
 
-    def insert_send_pre_bool(self, index: int, value: bool) -> None:
+    def insert_send_pre_bool(self, index: int, value: bool) -> None:  # noqa: FBT001
         xml_str = f'<{SendPreBool.TAG} Id="{index}" Value="{json.dumps(value)}" />'
 
         # Our element looks like:
@@ -377,7 +377,8 @@ class MidiControllerRange(ElementObject):
 class Send(ElementObject):
     TAG = "Send"
 
-    # Live saves "zero-valued" sends with this slightly-nonzero value.
+    # Live saves "zero-valued" sends with this slightly-nonzero value - we use this when creating new sends to match the
+    # default behavior, but it's also fine to set e.g. `send.value = 0`.
     _MIN_VALUE_STR: Final[str] = "0.0003162277571"
 
     @child_element_object_property(property_type=MidiControllerRange)

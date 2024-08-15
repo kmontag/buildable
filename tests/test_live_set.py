@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import difflib
 import gzip
 import io
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 from typeguard import typechecked
 
 from buildable.live_set import GroupTrack, LiveSet, PrimaryTrack, ReturnTrack
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

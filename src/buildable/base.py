@@ -16,14 +16,14 @@ if TYPE_CHECKING:
 _E = TypeVar("_E", bound="ElementObject")
 _E2 = TypeVar("_E2", bound="ElementObject")
 _T = TypeVar("_T")
-_T2 = TypeVar("_T2", covariant=True)
+_T2_co = TypeVar("_T2_co", covariant=True)
 _V = TypeVar("_V", str, int, bool, float)
 
 
 # Generic `property` protocol with the same get/set type. The type checker is able to infer the get/set type hints when
 # this is returned from a decorator. See e.g. https://github.com/python/typing/issues/985.
-class GenericProperty(Protocol[_T2]):
-    def __get__(self, obj: Any, type: type | None = ...) -> _T2:  # noqa: A002
+class GenericProperty(Protocol[_T2_co]):
+    def __get__(self, obj: Any, type: type | None = ...) -> _T2_co:  # noqa: A002
         ...
 
 
@@ -51,15 +51,15 @@ def xml_property(
                 raise ValueError(msg)
             if not isinstance(value, str):
                 msg = f"Unexpected property type in XML document: {type(value)} (expected str)"
-                raise AssertionError(msg)
+                raise TypeError(msg)
 
             # Special handling for boolean values, which show up as "true"/"false" strings.
             if issubclass(property_type, bool):
                 if value.lower() in ("true", "false"):
                     return property_type(value.lower() == "true")
-                else:
-                    msg = f"Unexpected boolean value in XML document: {value}"
-                    raise ValueError(msg)
+
+                msg = f"Unexpected boolean value in XML document: {value}"
+                raise ValueError(msg)
 
             return property_type(value)
 
