@@ -481,7 +481,7 @@ class Mixer(ElementObject):
         return self.element
 
     @xml_property(attrib="Value", property_type=int)
-    def view_state_session_track_width(self) -> _Element:
+    def view_state_sesstion_track_width(self) -> _Element:
         # [sic]
         return _presence(self.element.find("ViewStateSesstionTrackWidth"))
 
