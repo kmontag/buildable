@@ -381,10 +381,6 @@ class Transport(ElementObject):
         return self.element
 
     @key_midi_mapping()
-    def global_quantization_key_midi(self) -> _Element:
-        return self.element
-
-    @key_midi_mapping()
     def is_tempo_follower_in_control_key_midi(self) -> _Element:
         return self.element
 
