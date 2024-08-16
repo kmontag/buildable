@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## v0.2.0 (2024-08-16)
+
+### Chore
+
+* chore: formatting fixes ([`fc30c81`](https://github.com/kmontag/buildable/commit/fc30c810fc31e0ff78ede126d45a7261a69023b3))
+
+* chore: add set-level validations and start standardized test layout ([`6d97d2c`](https://github.com/kmontag/buildable/commit/6d97d2cc3257deecd3c8d0c1e88581ecebc1791f))
+
+### Documentation
+
+* docs: update README and contributing guidelines ([`ad53151`](https://github.com/kmontag/buildable/commit/ad5315185230a253999879f4d890164f9231d055))
+
+### Feature
+
+* feat: add specific error for duplicate pointee IDs ([`77d3c93`](https://github.com/kmontag/buildable/commit/77d3c93e1ca76a6e93c981447951527b3fbe7d32))
+
+* feat: add methods to move tracks ([`3ac8be1`](https://github.com/kmontag/buildable/commit/3ac8be1e2ca76122f4bf0a5ee605196f305fa122))
+
+### Fix
+
+* fix: disallow duplicate pointee IDs and fix SendsPre ID generation ([`e7ed501`](https://github.com/kmontag/buildable/commit/e7ed5014b4ec997954a071505d004572dc07706c))
+
 ## v0.1.1 (2024-08-16)
 
 ### Chore
