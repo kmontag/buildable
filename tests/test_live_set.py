@@ -170,6 +170,98 @@ def test_insert_return_tracks(live_12_default_set: pathlib.Path):
 
 
 @typechecked
+def test_delete_tracks(sends_set: pathlib.Path):
+    live_set = LiveSet.from_file(sends_set)
+    assert len(live_set.primary_tracks) == 2
+    assert len(live_set.return_tracks) == 2
+
+    # Sanity check structure...
+
+    # The first track should have the first send turned on, and the second turned off.
+    first_track = live_set.primary_tracks[0]
+    assert first_track.device_chain.mixer.sends.track_send_holders[0].send.manual > 0.9
+    assert first_track.device_chain.mixer.sends.track_send_holders[1].send.manual < 0.1
+
+    # The second track should have both sends turned off.
+    assert all(s.send.manual < 0.1 for s in live_set.primary_tracks[1].device_chain.mixer.sends.track_send_holders)
+
+    # The first send should have its SendPreBool turned on.
+    assert live_set.sends_pre.send_pre_bools[0].value is True
+    assert live_set.sends_pre.send_pre_bools[1].value is False
+
+    live_set.delete_primary_track(1)
+    live_set.delete_return_track(1)
+
+    output = io.BytesIO()
+    live_set.write(output)
+    output.seek(0)
+    modified_live_set = LiveSet(output)
+
+    # Make sure the track deletions were propagated.
+    assert len(modified_live_set.primary_tracks) == 1
+    assert len(modified_live_set.return_tracks) == 1
+
+    # Make sure an element was deleted from the SendsPre config.
+    assert len(live_set.sends_pre.send_pre_bools) == 1
+
+    # Make sure a send was deleted for all tracks.
+    for track in (*modified_live_set.primary_tracks, *modified_live_set.return_tracks):
+        assert len(track.device_chain.mixer.sends.track_send_holders) == 1
+
+    # Make sure the correct send was deleted.
+    assert modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.manual > 0.9
+
+    assert live_set.sends_pre.send_pre_bools[0].value is True
+    assert live_set.sends_pre.send_pre_bools[0].id == 0
+
+
+@typechecked
+def test_move_tracks(sends_set: pathlib.Path):
+    live_set = LiveSet.from_file(sends_set)
+    assert len(live_set.primary_tracks) == 2
+    assert len(live_set.return_tracks) == 2
+
+    # Sanity check structure...
+
+    # The first track should have the first send turned on, and the second turned off.
+    first_track = live_set.primary_tracks[0]
+    assert first_track.device_chain.mixer.sends.track_send_holders[0].send.manual > 0.9
+    assert first_track.device_chain.mixer.sends.track_send_holders[1].send.manual < 0.1
+
+    # The second track should have both sends turned off.
+    assert all(s.send.manual < 0.1 for s in live_set.primary_tracks[1].device_chain.mixer.sends.track_send_holders)
+
+    # The first send should have its SendPreBool turned on.
+    assert live_set.sends_pre.send_pre_bools[0].value is True
+    assert live_set.sends_pre.send_pre_bools[1].value is False
+
+    # Get return track names so we can verify they were moved.
+    return_track_names = [track.effective_name for track in live_set.return_tracks]
+
+    live_set.move_primary_track(0, 1)
+    live_set.move_return_track(0, 1)
+
+    output = io.BytesIO()
+    live_set.write(output)
+    output.seek(0)
+    modified_live_set = LiveSet(output)
+
+    # Make sure the primary track and associated send were moved.
+    assert all(
+        s.send.manual < 0.1 for s in modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders
+    )
+    second_track = modified_live_set.primary_tracks[1]
+    assert second_track.device_chain.mixer.sends.track_send_holders[1].send.manual > 0.9
+    assert second_track.device_chain.mixer.sends.track_send_holders[0].send.manual < 0.1
+
+    # The first send should have its SendPreBool turned on.
+    assert live_set.sends_pre.send_pre_bools[1].value is True
+    assert live_set.sends_pre.send_pre_bools[0].value is False
+
+    assert [track.effective_name for track in modified_live_set.return_tracks] == list(reversed(return_track_names))
+
+
+@typechecked
 def test_track_group_ids_updated(groups_set: pathlib.Path):
     live_set = LiveSet.from_file(groups_set)
 

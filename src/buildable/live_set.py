@@ -24,9 +24,22 @@ _U = TypeVar("_U")
 
 
 class KeyMidiMapping:
-    """A key and/or MIDI mapping for a particular target."""
+    """Describes a key and/or MIDI mapping for a particular target.
 
-    def __init__(self, parent: _Element, tag: str):
+    When accessing or modifying the mapping, the appropriate XML element will be created inside the parent element if it
+    doesn't already exist.
+
+    """
+
+    def __init__(
+        self,
+        # The containing element.
+        parent: _Element,
+        # The tag name, which determines the target of this mapping. In places where the target is non-ambiguous
+        # (e.g. inside the global mixer's Tempo object), this is generally simply "KeyMidi". Otherwise, this will be a
+        # more descriptive tag name, like "KeyMidiSceneUp".
+        tag: str,
+    ):
         self._parent = parent
         self._tag = tag
 
@@ -88,6 +101,11 @@ def key_midi_mapping(
     # If None, the upper-camelcased property name will be used as the tag name.
     tag: str | None = None,
 ) -> Callable[[Callable[[_U], _Element]], GenericProperty[KeyMidiMapping]]:
+    """Get a decorator which exposes a key/MIDI mapping, creating it if it doesn't already exist.
+
+    The decorated function should return the element which (possibly) contains the key/MIDI mapping.
+    """
+
     def inner(fn: Callable[[_U], _Element]) -> GenericProperty[KeyMidiMapping]:
         inferred_tag: str
         if tag is None:
@@ -199,9 +217,9 @@ class SendsPre(ElementObject):
         # Our element looks like:
         #
         # <SendsPre>
-        #   <SendPreBool Id="0" value="true">
-        #   <SendPreBool Id="1" value="false">
-        #   <SendPreBool Id="2" value="true">
+        #   <SendPreBool Id="0" Value="true">
+        #   <SendPreBool Id="1" Value="false">
+        #   <SendPreBool Id="2" Value="true">
         #   <!-- ... -->
         # </SendsPre>
 
@@ -217,6 +235,38 @@ class SendsPre(ElementObject):
                 raise AssertionError(msg)
             send_pre_bools[index].id = i
 
+    def delete_send_pre_bool(self, index: int) -> None:
+        send_pre_bools = self.send_pre_bools
+
+        # Ensure the index is within bounds.
+        if index < 0 or index >= len(send_pre_bools):
+            msg = f"SendPreBool index out of bounds: {index}"
+            raise IndexError(msg)
+
+        # Remove the element at the given index.
+        del self.element[index]
+
+        # Decrement the ID attributes of the remaining elements.
+        for i in range(index, len(send_pre_bools) - 1):
+            send_pre_bools[i + 1].id -= 1
+
+    def move_send_pre_bool(self, from_index: int, to_index: int) -> None:
+        # Ensure indices are within bounds.
+        send_pre_bools = self.send_pre_bools
+        if from_index < 0 or from_index >= len(send_pre_bools) or to_index < 0 or to_index >= len(send_pre_bools):
+            msg = f"SendPreBool index out of bounds: from {from_index} to {to_index}"
+            raise IndexError(msg)
+
+        # Move the element.
+        element = self.element[from_index]
+        del self.element[from_index]
+
+        self.element.insert(to_index, element)
+
+        # Update the ID attributes.
+        for i, send_pre_bool in enumerate(self.send_pre_bools):
+            send_pre_bool.id = i
+
 
 class SendPreBool(ElementObject):
     TAG = "SendPreBool"
@@ -231,6 +281,8 @@ class SendPreBool(ElementObject):
 
 
 class Routing(ElementObject):
+    """Common format for audio and MIDI I/O configurations."""
+
     @xml_property(attrib="Value", property_type=str)
     def target(self) -> _Element:
         return _presence(self.element.find("Target"))
@@ -261,6 +313,12 @@ class MidiOutputRouting(Routing):
 
 
 class Send(ModulableElementObject):
+    """Represents the value of a send on a particular track.
+
+    This is generally contained within a TrackSendHolder.
+
+    """
+
     TAG = "Send"
 
     # Live saves "zero-valued" sends with this slightly-nonzero value - we use this when creating new sends to match the
@@ -312,6 +370,8 @@ class TrackSendHolder(ElementObject):
 
 
 class Sends(ElementObject):
+    """Contains all Send objects (wrapped in TrackSendHolder objects) for a particular track."""
+
     TAG = "Sends"
 
     @property
@@ -340,7 +400,7 @@ class Sends(ElementObject):
                 raise AssertionError(msg)
             existing_track_send_holder.id = i
 
-    def delete_send(self, index) -> None:
+    def delete_send(self, index: int) -> None:
         if self.element[index].tag != TrackSendHolder.TAG:
             msg = f"Unexpected child element: {self.element[index].tag}"
             raise AssertionError(msg)
@@ -349,6 +409,28 @@ class Sends(ElementObject):
         # Update IDs of remaining track send holders.
         for i, existing_track_send_holder in enumerate(self.track_send_holders):
             existing_track_send_holder.id = i
+
+    def move_send(self, from_index: int, to_index: int) -> None:
+        # Ensure indices are within bounds.
+        track_send_holders = self.track_send_holders
+        if (
+            from_index < 0
+            or from_index >= len(track_send_holders)
+            or to_index < 0
+            or to_index >= len(track_send_holders)
+        ):
+            msg = f"TrackSendHolder index out of bounds: from {from_index} to {to_index}"
+            raise IndexError(msg)
+
+        # Move the element.
+        element = self.element[from_index]
+        del self.element[from_index]
+
+        self.element.insert(to_index, element)
+
+        # Update the ID attributes.
+        for i, track_send_holder in enumerate(self.track_send_holders):
+            track_send_holder.id = i
 
 
 class Transport(ElementObject):
@@ -705,17 +787,91 @@ class LiveSet(AbletonDocumentObject):
         return _presence(self._element.find("Tracks"))
 
     def delete_primary_track(self, index: int) -> None:
+        """Delete the primary track at the given index."""
         element_to_delete = self.primary_tracks[index].element
         self._tracks_element.remove(element_to_delete)
 
     def delete_return_track(self, index: int) -> None:
+        """Delete the return track at the given index, and the associated sends on all tracks."""
         element_to_delete = self.return_tracks[index].element
+
+        # Remove the element itself.
         self._tracks_element.remove(element_to_delete)
 
+        # Delete the associated SendPreBool.
+        self.sends_pre.delete_send_pre_bool(index)
+
+        # Delete the relevant TrackSendHolder for all other tracks.
+        for mixer_track in [*self.primary_tracks, *self.return_tracks]:
+            mixer_track.device_chain.mixer.sends.delete_send(index)
+
+    def move_primary_track(self, from_index: int, to_index: int) -> None:
+        """Move a primary track from one index to another.
+
+        This is roughly equivalent to deleting the track and re-inserting it at the new index, except that when using
+        this method, all relationships with other tracks will be preserved. Behavior is undefined if this moves a
+        grouped track outside of its containing group.
+
+        """
+        if any(i < 0 or i >= len(self.primary_tracks) for i in (from_index, to_index)):
+            msg = f"Primary track index out of range: from {from_index} to {to_index}"
+            raise IndexError(msg)
+
+        # Retrieve the track element to move.
+        track_element = self.primary_tracks[from_index].element
+
+        # Remove the track element from its current position.
+        self._tracks_element.remove(track_element)
+
+        # Insert the track element at its new position.
+        self._tracks_element.insert(to_index, track_element)
+
+    def move_return_track(self, from_index: int, to_index: int) -> None:
+        """Move a return track from one index to another, and re-order the sends on all tracks accordingly.
+
+        This is roughly equivalent to deleting the track and re-inserting it at the new index, except that when using
+        this method, all relationships with other tracks will be preserved.
+
+        """
+        if any(i < 0 or i >= len(self.return_tracks) for i in (from_index, to_index)):
+            msg = f"Primary track index out of range: from {from_index} to {to_index}"
+            raise IndexError(msg)
+
+        # Retrieve the return track element to move.
+        return_track_element = self.return_tracks[from_index].element
+
+        # Remove the element from its current position.
+        self._tracks_element.remove(return_track_element)
+
+        # Insert the element at its new position.
+        self._tracks_element.insert(len(self.primary_tracks) + to_index, return_track_element)
+
+        # Move the associated SendPreBool.
+        self.sends_pre.move_send_pre_bool(from_index, to_index)
+
+        # Move the associated sends in all tracks.
+        for mixer_track in (*self.primary_tracks, *self.return_tracks):
+            mixer_track.device_chain.mixer.sends.move_send(from_index, to_index)
+
     def insert_primary_tracks(self, primary_tracks: Sequence[PrimaryTrack], index: int = 0) -> None:
+        """Insert primary tracks (i.e. a standard audio, MIDI, or group tracks) at the given index.
+
+        All tracks must come from the same Live set. Logical relationships between them (e.g. control mappings, routing)
+        will be preserved.
+
+        Grouped tracks should always be copied along with their containing group (though it's not necessary to copy all
+        tracks within a given group).
+
+        """
         self.insert_tracks(primary_tracks=primary_tracks, primary_tracks_index=index)
 
     def insert_return_tracks(self, return_tracks: Sequence[ReturnTrack], index: int = 0) -> None:
+        """Insert return tracks at the given index (with 0 meaning the first return track in the set).
+
+        All tracks must come from the same Live set. Logical relationships between them (e.g. control mappings, routing)
+        will be preserved.
+
+        """
         self.insert_tracks(return_tracks=return_tracks, return_tracks_index=index)
 
     def insert_tracks(
@@ -918,4 +1074,5 @@ class LiveSet(AbletonDocumentObject):
 def _presence(value: _U | None, msg: str = "Expected value to be non-null") -> _U:
     if value is None:
         raise ValueError(msg)
+    return value
     return value
