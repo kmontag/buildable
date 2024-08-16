@@ -7,10 +7,15 @@
 
 ---
 
-`buildable` allows you to edit and extend Ableton Live sets
-programmatically. For example, you could have a single set that stores
-your common return tracks, and use `buildable` to add them to various
+`buildable` allows you to edit and extend Ableton Live sets programmatically. For example, you could
+have a single set that stores your common return tracks, and use `buildable` to add them to various
 template sets.
+
+Currently you can:
+
+- copy tracks/returns from other sets.
+- delete and re-order tracks/returns.
+- add/edit key mappings for many set elements.
 
 ## Installation
 
@@ -19,6 +24,9 @@ pip install buildable
 ```
 
 ## Usage
+
+For example, you could create a project containing set components that you want to mix together, and
+generate templates from them with something like:
 
 ```python
 from buildable import LiveSet
@@ -31,9 +39,33 @@ composition = LiveSet.from_file('composition-tracks.als')
 shared_structure = LiveSet.from_file('shared-structure.als')
 
 for template_set in (jam_session, composition):
+    # Copy returns and main track from the shared set.
     template_set.insert_return_tracks(shared_returns.return_tracks)
     template_set.main_track = shared_main.main_track
+
+    # Assign tap tempo to key "p".
+    template_set.transport.tap_tempo_key_midi.persistent_key_string = "p"
+
+# Assign crossfader to the mod wheel on MIDI channel 1.
+jam_session.main_track.key_midi_crossfade_equal.channel = 0
+jam_session.main_track.key_midi.crossfade_equal.note_or_controller = 1
 
 jam_session.write_to_file("/path/to/user-library/Templates/JamSession.als")
 composition.write_to_file("/path/to/user-library/Templates/Composition.als")
 ```
+
+## Design
+
+Live sets are represented as XML documents, and the `buildable` API mirrors the native document structure
+as closely as possible. This helps with flexibility and robustness, but comes with some caveats:
+
+- spelling mistakes and naming inconsistencies are carried over from the native format
+- property names aren't always obvious
+- some simple operations require using relatively complex accessors - for example, key/MIDI mappings
+  for sends are accessed using
+  e.g. `live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.key_midi`.
+- `buildable` won't stop you from setting values that are semantically valid, but invalid at
+  runtime.
+
+The best way to familiarize yourself with the structure is to examine existing Live sets (using
+e.g. `gunzip -c my-set.als`) and/or look through the `buildable` source code.

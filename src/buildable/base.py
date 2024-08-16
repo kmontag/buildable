@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from lxml.etree import _Element
 
 _E = TypeVar("_E", bound="ElementObject")
-_E2 = TypeVar("_E2", bound="ElementObject")
 _T = TypeVar("_T")
 _T2_co = TypeVar("_T2_co", covariant=True)
 _V = TypeVar("_V", str, int, bool, float)
@@ -74,10 +73,10 @@ def xml_property(
 
 
 def child_element_object_property(
-    property_type: type[_E2],
-) -> Callable[[Callable[[_E], _Element]], GenericProperty[_E2]]:
-    def inner(fn: Callable[[_E], _Element]) -> GenericProperty[_E2]:
-        def getter(instance: _E) -> _E2:
+    property_type: type[_E],
+) -> Callable[[Callable[[_T], _Element]], GenericProperty[_E]]:
+    def inner(fn: Callable[[_T], _Element]) -> GenericProperty[_E]:
+        def getter(instance: _T) -> _E:
             element: _Element = fn(instance)
             child_elements = element.findall(property_type.TAG)
             if len(child_elements) == 0:

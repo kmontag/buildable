@@ -4,11 +4,11 @@ import copy
 import json
 import re
 from functools import cached_property, partial
-from typing import TYPE_CHECKING, Collection, TypeVar
+from typing import TYPE_CHECKING, Callable, Collection, TypeVar
 
 from lxml.etree import fromstring
 
-from .base import AbletonDocumentObject, ElementObject, child_element_object_property, xml_property
+from .base import AbletonDocumentObject, ElementObject, GenericProperty, child_element_object_property, xml_property
 from .util import override
 
 if TYPE_CHECKING:
@@ -18,6 +18,623 @@ if TYPE_CHECKING:
 
 
 _U = TypeVar("_U")
+
+
+class KeyMidiMapping:
+    """A key and/or MIDI mapping for a particular target."""
+
+    def __init__(self, parent: _Element, tag: str):
+        self._parent = parent
+        self._tag = tag
+
+    # Get or create the underlying key/MIDI element.
+    #
+    # For now this has the side effect that XML elements will be created within the parent even when simply getting (not
+    # setting) mapping properties, but in practice this doesn't appear to affect anything.
+    def _get_element(self) -> _Element:
+        element = self._parent.find(self._tag)
+
+        # Create the element if it doesn't already exist.
+        if element is None:
+            element = fromstring(f"""
+                <{self._tag}>
+                    <PersistentKeyString Value="" />
+                    <IsNote Value="false" />
+                    <Channel Value="-1" />
+                    <NoteOrController Value="-1" />
+                    <LowerRangeNote Value="-1" />
+                    <UpperRangeNote Value="-1" />
+                    <ControllerMapMode Value="0" />
+                </{self._tag}>
+            """)  # noqa: S320
+
+            self._parent.append(element)
+        return element
+
+    @xml_property(attrib="Value", property_type=str)
+    def persistent_key_string(self) -> _Element:
+        return _presence(self._get_element().find("PersistentKeyString"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def is_note(self) -> _Element:
+        return _presence(self._get_element().find("IsNote"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def channel(self) -> _Element:
+        return _presence(self._get_element().find("Channel"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def note_or_controller(self) -> _Element:
+        return _presence(self._get_element().find("NoteOrController"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def lower_range_note(self) -> _Element:
+        return _presence(self._get_element().find("LowerRangeNote"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def upper_range_note(self) -> _Element:
+        return _presence(self._get_element().find("UpperRangeNote"))
+
+    # TODO: add constants for possible values here.
+    @xml_property(attrib="Value", property_type=int)
+    def controller_map_mode(self) -> _Element:
+        return _presence(self._get_element().find("ControllerMapMode"))
+
+
+def key_midi_mapping(
+    # If None, the upper-camelcased property name will be used as the tag name.
+    tag: str | None = None,
+) -> Callable[[Callable[[_U], _Element]], GenericProperty[KeyMidiMapping]]:
+    def inner(fn: Callable[[_U], _Element]) -> GenericProperty[KeyMidiMapping]:
+        inferred_tag: str
+        if tag is None:
+            property_name = fn.__name__
+            if property_name is None:
+                msg = "Tag name could not be inferred from callable."
+                raise ValueError(msg)
+            # Convert underscored name to upper camelcase.
+            inferred_tag = "".join(w.capitalize() for w in property_name.split("_"))
+        else:
+            inferred_tag = tag
+
+        # Use this to cache the result per-instance. Adapted from
+        # https://stackoverflow.com/questions/59929626/cache-results-of-properties-in-python-through-a-decorator.
+        cache_key = f"__key_midi_mapping_{fn.__name__}"
+
+        def getter(instance: _U) -> KeyMidiMapping:
+            parent = fn(instance)
+            if cache_key not in instance.__dict__:
+                instance.__dict__[cache_key] = KeyMidiMapping(parent, inferred_tag)
+            return instance.__dict__[cache_key]
+
+        return property(fget=getter)
+
+    return inner
+
+
+class AutomationOrModulationTarget(ElementObject):
+    @xml_property(attrib="Id", property_type=int)
+    def id(self) -> _Element:
+        return self.element
+
+    @xml_property(attrib="Value", property_type=bool)
+    def lock_envelope(self) -> _Element:
+        return _presence(self.element.find("LockEnvelope"))
+
+
+class AutomationTarget(AutomationOrModulationTarget):
+    TAG = "AutomationTarget"
+
+
+class ModulationTarget(AutomationOrModulationTarget):
+    TAG = "ModulationTarget"
+
+
+class MidiControllerRange(ElementObject):
+    TAG = "MidiControllerRange"
+
+    @xml_property(attrib="Value", property_type=float)
+    def min(self) -> _Element:
+        return _presence(self.element.find("Min"))
+
+    @xml_property(attrib="Value", property_type=float)
+    def max(self) -> _Element:
+        return _presence(self.element.find("Max"))
+
+
+class AutomatableElementObject(ElementObject):
+    """Common structure for an element that can be automated.
+
+    Most of these objects are also `ModulableElementObject`s, but there are a handful of properties (e.g. the time
+    signature) which can be automated but not assigned to a modulator.
+
+    """
+
+    @xml_property(attrib="Value", property_type=int)
+    def lom_id(self) -> _Element:
+        return _presence(self.element.find("LomId"))
+
+    @xml_property(attrib="Value", property_type=float)
+    def manual(self) -> _Element:
+        return _presence(self.element.find("Manual"))
+
+    @child_element_object_property(property_type=AutomationTarget)
+    def automation_target(self) -> _Element:
+        return self.element
+
+
+class ModulableElementObject(AutomatableElementObject):
+    """Common structure for an element that can be modulated over a range of possible values.
+
+    Objects of this type can be key/MIDI mapped (though not all mappable parameters can be described by such an object). For example, objects describing the set tempo and track send values inherit from this type.
+    """
+
+    @key_midi_mapping()
+    def key_midi(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=MidiControllerRange)
+    def midi_controller_range(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=ModulationTarget)
+    def modulation_target(self) -> _Element:
+        return self.element
+
+
+class SendsPre(ElementObject):
+    TAG = "SendsPre"
+
+    @property
+    def send_pre_bools(self) -> Sequence[SendPreBool]:
+        # All children should be of this type.
+        return [SendPreBool(child) for child in self.element]
+
+    def insert_send_pre_bool(self, index: int, value: bool) -> None:  # noqa: FBT001
+        xml_str = f'<{SendPreBool.TAG} Id="{index}" Value="{json.dumps(value)}" />'
+
+        # Our element looks like:
+        #
+        # <SendsPre>
+        #   <SendPreBool Id="0" value="true">
+        #   <SendPreBool Id="1" value="false">
+        #   <SendPreBool Id="2" value="true">
+        #   <!-- ... -->
+        # </SendsPre>
+
+        # Insert the new child element at the appropriate index.
+        new_element = fromstring(xml_str)  # noqa: S320
+        self.element.insert(index, new_element)
+
+        # Update the ID attributes of elements that come after the inserted element.
+        send_pre_bools = self.send_pre_bools
+        for i in range(index + 1, len(send_pre_bools)):
+            if send_pre_bools[index].id != i - 1:
+                msg = f"Unexpected SendPreBool ID at position {i}: {send_pre_bools[index].id}"
+                raise AssertionError(msg)
+            send_pre_bools[index].id = i
+
+
+class SendPreBool(ElementObject):
+    TAG = "SendPreBool"
+
+    @xml_property(attrib="Id", property_type=int)
+    def id(self) -> _Element:
+        return self.element
+
+    @xml_property(attrib="Value", property_type=bool)
+    def value(self) -> _Element:
+        return self.element
+
+
+class Routing(ElementObject):
+    @xml_property(attrib="Value", property_type=str)
+    def target(self) -> _Element:
+        return _presence(self.element.find("Target"))
+
+    @xml_property(attrib="Value", property_type=str)
+    def upper_display_string(self) -> _Element:
+        return _presence(self.element.find("UpperDisplayString"))
+
+    @xml_property(attrib="Value", property_type=str)
+    def lower_display_string(self) -> _Element:
+        return _presence(self.element.find("LowerDisplayString"))
+
+
+class AudioInputRouting(Routing):
+    TAG = "AudioInputRouting"
+
+
+class AudioOutputRouting(Routing):
+    TAG = "AudioOutputRouting"
+
+
+class MidiInputRouting(Routing):
+    TAG = "MidiInputRouting"
+
+
+class MidiOutputRouting(Routing):
+    TAG = "MidiOutputRouting"
+
+
+class Send(ModulableElementObject):
+    TAG = "Send"
+
+    # Live saves "zero-valued" sends with this slightly-nonzero value - we use this when creating new sends to match the
+    # default behavior, but it's also fine to set e.g. `send.value = 0`.
+    _MIN_VALUE_STR: Final[str] = "0.0003162277571"
+
+    @classmethod
+    def create(cls, *, automation_target_id: int, modulation_target_id: int) -> Self:
+        """Create a new Send element.
+
+        The element's value will be set to the minimum allowed (though this can be adjusted later by setting the
+        instance's 'value' property).
+        """
+
+        xml_str = f"""
+            <{cls.TAG}>
+                <LomId Value="0" />
+                <Manual Value="{cls._MIN_VALUE_STR}" />
+                <MidiControllerRange>
+                    <Min Value="{cls._MIN_VALUE_STR}" />
+                    <Max Value="1" />
+                </MidiControllerRange>
+                <AutomationTarget Id="{automation_target_id}">
+                    <LockEnvelope Value="0" />
+                </AutomationTarget>
+                <ModulationTarget Id="{modulation_target_id}">
+                    <LockEnvelope Value="0" />
+                </ModulationTarget>
+            </{cls.TAG}>
+        """
+
+        return cls(fromstring(xml_str))  # noqa: S320
+
+
+class TrackSendHolder(ElementObject):
+    TAG = "TrackSendHolder"
+
+    @xml_property(attrib="Id", property_type=int)
+    def id(self) -> _Element:
+        return self.element
+
+    @xml_property(attrib="Value", property_type=bool)
+    def enabled_by_user(self) -> _Element:
+        return _presence(self.element.find("EnabledByUser"))
+
+    @child_element_object_property(property_type=Send)
+    def send(self) -> _Element:
+        return self.element
+
+
+class Sends(ElementObject):
+    TAG = "Sends"
+
+    @property
+    def track_send_holders(self) -> Sequence[TrackSendHolder]:
+        # This should be the only child element type.
+        return [TrackSendHolder(child) for child in self.element]
+
+    def insert_send(self, index: int, send: Send, *, enabled_by_user: bool = False) -> None:
+        track_send_holder_element = fromstring(  # noqa: S320
+            f"""
+            <{TrackSendHolder.TAG} Id="{index}">
+                <EnabledByUser Value="{json.dumps(enabled_by_user)}" />
+            </{TrackSendHolder.TAG}>
+            """
+        )
+        # Prepend the <Send> element to the send holder.
+        track_send_holder_element.insert(0, copy.deepcopy(send.element))
+
+        # Add the send holder at the appropriate position.
+        self.element.insert(index, track_send_holder_element)
+
+        # Update IDs of existing track send holders.
+        for i, existing_track_send_holder in enumerate(list(self.track_send_holders)[index + 1 :], start=index + 1):
+            if existing_track_send_holder.id != i - 1:
+                msg = f"Unexpected ID ({existing_track_send_holder.id}) for track send holder at index {i}"
+                raise AssertionError(msg)
+            existing_track_send_holder.id = i
+
+    def delete_send(self, index) -> None:
+        if self.element[index].tag != TrackSendHolder.TAG:
+            msg = f"Unexpected child element: {self.element[index].tag}"
+            raise AssertionError(msg)
+        del self.element[index]
+
+        # Update IDs of remaining track send holders.
+        for i, existing_track_send_holder in enumerate(self.track_send_holders):
+            existing_track_send_holder.id = i
+
+
+class Transport(ElementObject):
+    TAG = "Transport"
+
+    # Key/MIDI mappings. Tag names are inferred from the property names.
+
+    @key_midi_mapping()
+    def arrangement_overdub_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def automation_arm_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def back_to_arrangement_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def draw_button_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def follow_action_enabled_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def follow_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def global_quantization_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def is_tempo_follower_in_control_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def loop_on_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def metronom_on_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def phase_nudge_down_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def phase_nudge_up_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def prepare_scene_for_new_recording_key_midi(self) -> _Element:
+        return self.element
+
+    # [sic]
+    @key_midi_mapping()
+    def punsh_in_key_midi(self) -> _Element:
+        return self.element
+
+    # [sic]
+    @key_midi_mapping()
+    def punsh_out_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def re_enable_automation_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def record_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def session_record_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def start_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def stop_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def tap_tempo_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def trigger_capture_key_midi(self) -> _Element:
+        return self.element
+
+
+class CrossFade(ModulableElementObject):
+    TAG = "CrossFade"
+
+
+class GlobalGrooveAmount(ModulableElementObject):
+    TAG = "GlobalGrooveAmount"
+
+
+class TimeSignature(AutomatableElementObject):
+    TAG = "TimeSignature"
+
+
+class Tempo(ModulableElementObject):
+    TAG = "Tempo"
+
+
+class Volume(ModulableElementObject):
+    TAG = "Volume"
+
+
+class Mixer(ElementObject):
+    TAG = "Mixer"
+
+    # Properties that only appear on primary/return tracks.
+
+    @child_element_object_property(property_type=Sends)
+    def sends(self) -> _Element:
+        return self.element
+
+    # Properties that only appear on the main track.
+
+    @child_element_object_property(property_type=GlobalGrooveAmount)
+    def global_groove_amount(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def stop_key_midi(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=Tempo)
+    def tempo(self) -> _Element:
+        return self.element
+
+    @xml_property(attrib="Value", property_type=int)
+    def view_state_sesstion_track_width(self) -> _Element:
+        # [sic]
+        return _presence(self.element.find("ViewStateSesstionTrackWidth"))
+
+    @child_element_object_property(property_type=Volume)
+    def volume(self) -> _Element:
+        return self.element
+
+
+class DeviceChain(ElementObject):
+    TAG = "DeviceChain"
+
+    @child_element_object_property(property_type=AudioInputRouting)
+    def audio_input_routing(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=AudioOutputRouting)
+    def audio_output_routing(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=MidiInputRouting)
+    def midi_input_routing(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=MidiOutputRouting)
+    def midi_output_routing(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=Mixer)
+    def mixer(self) -> _Element:
+        return self.element
+
+
+class Track(ElementObject):
+    @xml_property(attrib="Value", property_type=bool)
+    def is_content_selected_in_document(self) -> _Element:
+        return _presence(self.element.find("IsContentSelectedInDocument"))
+
+    @xml_property(attrib="Value", property_type=str)
+    def effective_name(self) -> _Element:
+        return _presence(_presence(self.element.find("Name")).find("EffectiveName"))
+
+    @xml_property(attrib="Value", property_type=str)
+    def user_name(self) -> _Element:
+        return _presence(_presence(self.element.find("Name")).find("UserName"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def linked_track_group_id(self) -> _Element:
+        return _presence(self.element.find("LinkedTrackGroupId"))
+
+    @property
+    def device_chain(self) -> DeviceChain:
+        return DeviceChain(_presence(self.element.find(DeviceChain.TAG)))
+
+    def __repr__(self) -> str:
+        return f"{self.element.tag}({self.effective_name})"
+
+
+class MixerTrack(Track):
+    @xml_property(attrib="Id", property_type=int)
+    def id(self) -> _Element:
+        return self.element
+
+    @xml_property(attrib="Value", property_type=int)
+    def track_group_id(self) -> _Element:
+        return _presence(self.element.find("TrackGroupId"))
+
+
+class PrimaryTrack(MixerTrack):
+    @staticmethod
+    def types() -> Collection[type[PrimaryTrack]]:
+        return {AudioTrack, GroupTrack, MidiTrack}
+
+    @staticmethod
+    def from_element(element: _Element) -> PrimaryTrack:
+        for primary_track_type in PrimaryTrack.types():
+            if element.tag == primary_track_type.TAG:
+                return primary_track_type(element)
+        msg = f"Unrecognized primary track tag: {element.tag}"
+        raise ValueError(msg)
+
+
+class AudioTrack(PrimaryTrack):
+    TAG = "AudioTrack"
+
+
+class GroupTrack(PrimaryTrack):
+    TAG = "GroupTrack"
+
+
+class MidiTrack(PrimaryTrack):
+    TAG = "MidiTrack"
+
+
+class ReturnTrack(MixerTrack):
+    TAG = "ReturnTrack"
+
+    # In addition to the XML element, return tracks need some additional context to preserve their relationships to
+    # other elements in the set.
+    def __init__(self, element: _Element, *, send_index: int, send_pre: bool) -> None:
+        super().__init__(element)
+        self._send_index = send_index
+        self._send_pre = send_pre
+
+    @property
+    def send_index(self) -> int:
+        return self._send_index
+
+    @property
+    def send_pre(self) -> bool:
+        return self._send_pre
+
+
+class MainTrack(Track):
+    TAG = "MainTrack"
+
+    @key_midi_mapping()
+    def key_midi_fire_selected_scene(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_cancel_launch(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_scene_up(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_scene_down(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_scroll_selected_scene(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_crossfade_equal(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def key_midi_tempo_fine(self) -> _Element:
+        return self.element
+
+
+class PreHearTrack(Track):
+    TAG = "PreHearTrack"
 
 
 class LiveSet(AbletonDocumentObject):
@@ -64,13 +681,25 @@ class LiveSet(AbletonDocumentObject):
             for index, track in enumerate(t for t in self._tracks_element if t.tag == ReturnTrack.TAG)
         ]
 
+    @child_element_object_property(property_type=PreHearTrack)
+    def pre_hear_track(self) -> _Element:
+        return self._element
+
+    @child_element_object_property(property_type=SendsPre)
+    def sends_pre(self) -> _Element:
+        return self._element
+
+    @child_element_object_property(property_type=Transport)
+    def transport(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def global_quantisation_key_midi(self) -> _Element:
+        return self._element
+
     @xml_property(attrib="Value", property_type=int)
     def _next_pointee_id(self) -> _Element:
         return _presence(self._element.find("NextPointeeId"))
-
-    @cached_property
-    def sends_pre(self) -> SendsPre:
-        return SendsPre(_presence(self._element.find(SendsPre.TAG)))
 
     @cached_property
     def _tracks_element(self) -> _Element:
@@ -285,313 +914,6 @@ class LiveSet(AbletonDocumentObject):
                 pointee_id_element.attrib["Value"] = str(pointee_id_replacements[old_id])
 
         self._next_pointee_id = next_pointee_id
-
-
-class SendsPre(ElementObject):
-    TAG = "SendsPre"
-
-    @property
-    def send_pre_bools(self) -> Sequence[SendPreBool]:
-        # All children should be of this type.
-        return [SendPreBool(child) for child in self.element]
-
-    def insert_send_pre_bool(self, index: int, value: bool) -> None:  # noqa: FBT001
-        xml_str = f'<{SendPreBool.TAG} Id="{index}" Value="{json.dumps(value)}" />'
-
-        # Our element looks like:
-        #
-        # <SendsPre>
-        #   <SendPreBool Id="0" value="true">
-        #   <SendPreBool Id="1" value="false">
-        #   <SendPreBool Id="2" value="true">
-        #   <!-- ... -->
-        # </SendsPre>
-
-        # Insert the new child element at the appropriate index.
-        new_element = fromstring(xml_str)
-        self.element.insert(index, new_element)
-
-        # Update the ID attributes of elements that come after the inserted element.
-        send_pre_bools = self.send_pre_bools
-        for i in range(index + 1, len(send_pre_bools)):
-            if send_pre_bools[index].id != i - 1:
-                msg = f"Unexpected SendPreBool ID at position {i}: {send_pre_bools[index].id}"
-                raise AssertionError(msg)
-            send_pre_bools[index].id = i
-
-
-class SendPreBool(ElementObject):
-    TAG = "SendPreBool"
-
-    @xml_property(attrib="Id", property_type=int)
-    def id(self) -> _Element:
-        return self.element
-
-    @xml_property(attrib="Value", property_type=bool)
-    def value(self) -> _Element:
-        return self.element
-
-
-class Routing(ElementObject):
-    @xml_property(attrib="Value", property_type=str)
-    def target(self) -> _Element:
-        return _presence(self.element.find("Target"))
-
-    @xml_property(attrib="Value", property_type=str)
-    def upper_display_string(self) -> _Element:
-        return _presence(self.element.find("UpperDisplayString"))
-
-    @xml_property(attrib="Value", property_type=str)
-    def lower_display_string(self) -> _Element:
-        return _presence(self.element.find("LowerDisplayString"))
-
-
-class AudioInputRouting(Routing):
-    TAG = "AudioInputRouting"
-
-
-class AudioOutputRouting(Routing):
-    TAG = "AudioOutputRouting"
-
-
-class MidiInputRouting(Routing):
-    TAG = "MidiInputRouting"
-
-
-class MidiOutputRouting(Routing):
-    TAG = "MidiOutputRouting"
-
-
-class MidiControllerRange(ElementObject):
-    TAG = "MidiControllerRange"
-
-    @xml_property(attrib="Value", property_type=float)
-    def min(self) -> _Element:
-        return _presence(self.element.find("Min"))
-
-    @xml_property(attrib="Value", property_type=float)
-    def max(self) -> _Element:
-        return _presence(self.element.find("Max"))
-
-
-class Send(ElementObject):
-    TAG = "Send"
-
-    # Live saves "zero-valued" sends with this slightly-nonzero value - we use this when creating new sends to match the
-    # default behavior, but it's also fine to set e.g. `send.value = 0`.
-    _MIN_VALUE_STR: Final[str] = "0.0003162277571"
-
-    @child_element_object_property(property_type=MidiControllerRange)
-    def midi_controller_range(self) -> _Element:
-        return self.element
-
-    @classmethod
-    def create(cls, *, automation_target_id: int, modulation_target_id: int) -> Self:
-        """Create a new Send element.
-
-        The element's value will be set to the minimum allowed (though this can be adjusted later by setting the
-        instance's 'value' property).
-        """
-
-        xml_str = f"""
-            <{cls.TAG}>
-                <LomId Value="0" />
-                <Manual Value="{cls._MIN_VALUE_STR}" />
-                <MidiControllerRange>
-                    <Min Value="{cls._MIN_VALUE_STR}" />
-                    <Max Value="1" />
-                </MidiControllerRange>
-                <AutomationTarget Id="{automation_target_id}">
-                    <LockEnvelope Value="0" />
-                </AutomationTarget>
-                <ModulationTarget Id="{modulation_target_id}">
-                    <LockEnvelope Value="0" />
-                </ModulationTarget>
-            </{cls.TAG}>
-        """
-
-        return cls(fromstring(xml_str))
-
-    @xml_property(attrib="Value", property_type=float)
-    def value(self) -> _Element:
-        return _presence(self.element.find("Manual"))
-
-
-class TrackSendHolder(ElementObject):
-    TAG = "TrackSendHolder"
-
-    @xml_property(attrib="Id", property_type=int)
-    def id(self) -> _Element:
-        return self.element
-
-    @xml_property(attrib="Value", property_type=bool)
-    def enabled_by_user(self) -> _Element:
-        return _presence(self.element.find("EnabledByUser"))
-
-    @child_element_object_property(property_type=Send)
-    def send(self) -> _Element:
-        return self.element
-
-
-class Sends(ElementObject):
-    TAG = "Sends"
-
-    @property
-    def track_send_holders(self) -> Sequence[TrackSendHolder]:
-        # This should be the only child element type.
-        return [TrackSendHolder(child) for child in self.element]
-
-    def insert_send(self, index: int, send: Send, *, enabled_by_user: bool = False) -> None:
-        track_send_holder_element = fromstring(
-            f"""
-            <{TrackSendHolder.TAG} Id="{index}">
-                <EnabledByUser Value="{json.dumps(enabled_by_user)}" />
-            </{TrackSendHolder.TAG}>
-            """
-        )
-        # Prepend the <Send> element to the send holder.
-        track_send_holder_element.insert(0, copy.deepcopy(send.element))
-
-        # Add the send holder at the appropriate position.
-        self.element.insert(index, track_send_holder_element)
-
-        # Update IDs of existing track send holders.
-        for i, existing_track_send_holder in enumerate(list(self.track_send_holders)[index + 1 :], start=index + 1):
-            if existing_track_send_holder.id != i - 1:
-                msg = f"Unexpected ID ({existing_track_send_holder.id}) for track send holder at index {i}"
-                raise AssertionError(msg)
-            existing_track_send_holder.id = i
-
-    def delete_send(self, index) -> None:
-        if self.element[index].tag != TrackSendHolder.TAG:
-            msg = f"Unexpected child element: {self.element[index].tag}"
-            raise AssertionError(msg)
-        del self.element[index]
-
-        # Update IDs of remaining track send holders.
-        for i, existing_track_send_holder in enumerate(self.track_send_holders):
-            existing_track_send_holder.id = i
-
-
-class Mixer(ElementObject):
-    TAG = "Mixer"
-
-    @child_element_object_property(property_type=Sends)
-    def sends(self) -> _Element:
-        return self.element
-
-    @xml_property(attrib="Value", property_type=int)
-    def view_state_sesstion_track_width(self) -> _Element:
-        # [sic]
-        return _presence(self.element.find("ViewStateSesstionTrackWidth"))
-
-
-class DeviceChain(ElementObject):
-    TAG = "DeviceChain"
-
-    @child_element_object_property(property_type=AudioInputRouting)
-    def audio_input_routing(self) -> _Element:
-        return self.element
-
-    @child_element_object_property(property_type=AudioOutputRouting)
-    def audio_output_routing(self) -> _Element:
-        return self.element
-
-    @child_element_object_property(property_type=MidiInputRouting)
-    def midi_input_routing(self) -> _Element:
-        return self.element
-
-    @child_element_object_property(property_type=MidiOutputRouting)
-    def midi_output_routing(self) -> _Element:
-        return self.element
-
-    @child_element_object_property(property_type=Mixer)
-    def mixer(self) -> _Element:
-        return self.element
-
-
-class Track(ElementObject):
-    @xml_property(attrib="Value", property_type=bool)
-    def is_content_selected_in_document(self) -> _Element:
-        return _presence(self.element.find("IsContentSelectedInDocument"))
-
-    @xml_property(attrib="Value", property_type=str)
-    def effective_name(self) -> _Element:
-        return _presence(_presence(self.element.find("Name")).find("EffectiveName"))
-
-    @xml_property(attrib="Value", property_type=str)
-    def user_name(self) -> _Element:
-        return _presence(_presence(self.element.find("Name")).find("UserName"))
-
-    @xml_property(attrib="Value", property_type=int)
-    def linked_track_group_id(self) -> _Element:
-        return _presence(self.element.find("LinkedTrackGroupId"))
-
-    @property
-    def device_chain(self) -> DeviceChain:
-        return DeviceChain(_presence(self.element.find(DeviceChain.TAG)))
-
-    def __repr__(self) -> str:
-        return f"{self.element.tag}({self.effective_name})"
-
-
-class MixerTrack(Track):
-    @xml_property(attrib="Id", property_type=int)
-    def id(self) -> _Element:
-        return self.element
-
-    @xml_property(attrib="Value", property_type=int)
-    def track_group_id(self) -> _Element:
-        return _presence(self.element.find("TrackGroupId"))
-
-
-class PrimaryTrack(MixerTrack):
-    @staticmethod
-    def types() -> Collection[type[PrimaryTrack]]:
-        return {AudioTrack, GroupTrack, MidiTrack}
-
-    @staticmethod
-    def from_element(element: _Element) -> PrimaryTrack:
-        for primary_track_type in PrimaryTrack.types():
-            if element.tag == primary_track_type.TAG:
-                return primary_track_type(element)
-        msg = f"Unrecognized primary track tag: {element.tag}"
-        raise ValueError(msg)
-
-
-class AudioTrack(PrimaryTrack):
-    TAG = "AudioTrack"
-
-
-class GroupTrack(PrimaryTrack):
-    TAG = "GroupTrack"
-
-
-class MidiTrack(PrimaryTrack):
-    TAG = "MidiTrack"
-
-
-class ReturnTrack(MixerTrack):
-    TAG = "ReturnTrack"
-
-    # In addition to the XML element, return tracks need some additional context to preserve their relationships to
-    # other elements in the set.
-    def __init__(self, element: _Element, *, send_index: int, send_pre: bool) -> None:
-        super().__init__(element)
-        self._send_index = send_index
-        self._send_pre = send_pre
-
-    @property
-    def send_index(self) -> int:
-        return self._send_index
-
-    @property
-    def send_pre(self) -> bool:
-        return self._send_pre
-
-
-class MainTrack(Track):
-    TAG = "MainTrack"
 
 
 def _presence(value: _U | None, msg: str = "Expected value to be non-null") -> _U:

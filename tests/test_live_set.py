@@ -3,15 +3,16 @@ from __future__ import annotations
 import difflib
 import gzip
 import io
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import pytest
 from typeguard import typechecked
 
-from buildable.live_set import GroupTrack, LiveSet, PrimaryTrack, ReturnTrack
+from buildable.live_set import GroupTrack, KeyMidiMapping, LiveSet, PrimaryTrack, ReturnTrack
 
 if TYPE_CHECKING:
     import pathlib
+    from typing import Final
 
 
 @pytest.fixture
@@ -20,12 +21,21 @@ def live_12_default_set(datadir: pathlib.Path) -> pathlib.Path:
     return datadir / "live-12-default.als"
 
 
+# A set with grouped tracks.
 @pytest.fixture
 @typechecked
 def groups_set(datadir: pathlib.Path) -> pathlib.Path:
     return datadir / "groups.als"
 
 
+# A set with mapped examples of all supported key/MIDI mappings.
+@pytest.fixture
+@typechecked
+def key_midi_mappings_set(datadir: pathlib.Path) -> pathlib.Path:
+    return datadir / "key-midi-mappings.als"
+
+
+# A set with track-to-track routing (audio and MIDI).
 @pytest.fixture
 @typechecked
 def routing_set(datadir: pathlib.Path) -> pathlib.Path:
@@ -284,10 +294,10 @@ def test_sends_inserted(sends_set: pathlib.Path):
     assert max_send_value == 1.0  # Sanity check.
 
     # Get all send values for primary and return tracks (in that order) in the given set.
-    def get_send_values(live_set: LiveSet) -> tuple[tuple[float, ...], ...]:
+    def get_send_manual_values(live_set: LiveSet) -> tuple[tuple[float, ...], ...]:
         return tuple(
             tuple(
-                track_send_holder.send.value for track_send_holder in track.device_chain.mixer.sends.track_send_holders
+                track_send_holder.send.manual for track_send_holder in track.device_chain.mixer.sends.track_send_holders
             )
             for track in [*live_set.primary_tracks, *live_set.return_tracks]
         )
@@ -307,7 +317,7 @@ def test_sends_inserted(sends_set: pathlib.Path):
     )
     assert [t.send_pre for t in live_set.return_tracks] == [True, False]
 
-    actual_send_values = get_send_values(live_set)
+    actual_send_values = get_send_manual_values(live_set)
     assert (
         actual_send_values == expected_send_values
     ), f"Unexpected send values in unmodified set: {actual_send_values} (expected {expected_send_values})"
@@ -353,7 +363,7 @@ def test_sends_inserted(sends_set: pathlib.Path):
             (False, False, False, False, False),
         )
     )
-    actual_send_values = get_send_values(modified_live_set)
+    actual_send_values = get_send_manual_values(modified_live_set)
     assert (
         actual_send_values == expected_send_values
     ), f"Unexpected send values in modified set: {actual_send_values} (expected {expected_send_values})"
@@ -369,3 +379,127 @@ def test_sends_inserted(sends_set: pathlib.Path):
 
     # Ensure that SendsPre states get carried over.
     assert [t.send_pre for t in live_set.return_tracks] == [True, True, False, True, False]
+
+
+@typechecked
+def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
+    live_set = LiveSet.from_file(key_midi_mappings_set)
+
+    # Mapping names for various targets which are mapped to keys in the test set. For simplicity, we use keys rather
+    # than MIDI for almost every mapping; MIDI is tested with a more limited set of mappings below.
+    key_mapping_names_by_target_getter: dict[Callable[[LiveSet], Any], tuple[str, ...]] = {
+        # Mapping names are listed in the order they appear in the "Key Mappings" pane whne sorting by path.
+        lambda s: s: (
+            # This shows up under "Transport" in the UI.
+            "global_quantisation_key_midi",
+        ),
+        lambda s: s.main_track: (
+            "key_midi_fire_selected_scene",
+            "key_midi_cancel_launch",
+            "key_midi_scene_up",
+            "key_midi_scene_down",
+            "key_midi_scroll_selected_scene",
+            "key_midi_crossfade_equal",
+            "key_midi_tempo_fine",
+        ),
+        lambda s: s.main_track.device_chain.mixer: (
+            "stop_key_midi",  # Stop clips.
+        ),
+        lambda s: s.main_track.device_chain.mixer.global_groove_amount: ("key_midi",),
+        lambda s: s.return_tracks[0].device_chain.mixer.sends.track_send_holders[0].send: ("key_midi",),
+        lambda s: s.transport: (
+            "phase_nudge_up_key_midi",
+            "phase_nudge_down_key_midi",
+            "tap_tempo_key_midi",
+            "start_key_midi",
+            "stop_key_midi",
+            "record_key_midi",
+            "session_record_key_midi",
+            "prepare_scene_for_new_recording_key_midi",
+            "arrangement_overdub_key_midi",
+            "automation_arm_key_midi",
+            "back_to_arrangement_key_midi",
+            "re_enable_automation_key_midi",
+            "loop_on_key_midi",
+            "punsh_in_key_midi",
+            "punsh_out_key_midi",
+            "draw_button_key_midi",
+            "follow_key_midi",
+            "metronom_on_key_midi",
+            "trigger_capture_key_midi",
+            "follow_action_enabled_key_midi",
+            "is_tempo_follower_in_control_key_midi",
+            # Note: quantization is also listed under the "Transport" path in the UI, but it actually lives on the root
+            # set object.
+        ),
+    }
+
+    midi_mapping_names_by_target_getter: dict[Callable[[LiveSet], Any], tuple[str, ...]] = {
+        lambda s: s.main_track.device_chain.mixer.tempo: ("key_midi",),
+        lambda s: s.pre_hear_track.device_chain.mixer.volume: ("key_midi",),
+    }
+
+    # In the test set, all main/transport elements are mapped to either "a", "b", or "c" (we need 3 keys to avoid conflicts
+    # that are disallowed by Live). Make sure we can read these mappings, then update them and check that the updates
+    # get applied.
+    original_to_updated_keys: Final = {"a": "x", "b": "y", "c": "z"}
+
+    # List of targets, mapping names, and a dictionary of mapping name -> updated key string.
+    key_targets_to_process: Sequence[tuple[Any, Sequence[str], dict[str, str]]] = [
+        (target, mapping_names, {}) for target, mapping_names in key_mapping_names_by_target_getter.items()
+    ]
+
+    for get_target, mapping_names, updated_key_strings in key_targets_to_process:
+        target = get_target(live_set)
+        for mapping_name in mapping_names:
+            mapping = getattr(target, mapping_name)
+            assert isinstance(mapping, KeyMidiMapping)
+
+            # Check that we correctly read the mapping as being set.
+            assert (
+                mapping.persistent_key_string in original_to_updated_keys
+            ), f'Unrecognized key mapping for {mapping_name} on {target}: "{mapping.persistent_key_string}"'
+
+            # Update the mapping and store the updated value.
+            updated_key_string = original_to_updated_keys[mapping.persistent_key_string]
+            mapping.persistent_key_string = updated_key_string
+            updated_key_strings[mapping_name] = updated_key_string
+
+    # Simpler test for MIDI mappings, of which there are only a handful, and which are all bound to the same
+    # parameter. Aside from the properties being set on the `KeyMidiMapping` object, there isn't any known difference
+    # that needs to be taken into account when handling MIDI vs key mappings, so there's no need to test more of these.
+    for get_target, mapping_names in midi_mapping_names_by_target_getter.items():
+        target = get_target(live_set)
+        for mapping_name in mapping_names:
+            mapping = getattr(target, mapping_name)
+            assert isinstance(mapping, KeyMidiMapping)
+
+            assert mapping.channel == 0  # MIDI channel 1.
+            assert mapping.note_or_controller == 1  # Mod wheel.
+            mapping.channel = 1
+            mapping.note_or_controller = 2
+
+    output = io.BytesIO()
+    live_set.write(output)
+    output.seek(0)
+    modified_live_set = LiveSet(output)
+
+    for get_target, mapping_names, updated_key_strings in key_targets_to_process:
+        target = get_target(modified_live_set)
+        for mapping_name in mapping_names:
+            mapping = getattr(target, mapping_name)
+            assert isinstance(mapping, KeyMidiMapping)
+
+            # Check that the updated mapping was correctly saved.
+            assert (
+                mapping.persistent_key_string == updated_key_strings[mapping_name]
+            ), f'Incorrect updated key mapping for {mapping_name}: "{mapping.persistent_key_string}" (expected "{updated_key_strings[mapping_name]}")'
+
+    # Check that the updated MIDI mappings were correctly saved.
+    for get_target, mapping_names in midi_mapping_names_by_target_getter.items():
+        target = get_target(live_set)
+        for mapping_name in mapping_names:
+            mapping = getattr(target, mapping_name)
+            assert isinstance(mapping, KeyMidiMapping)
+            assert mapping.channel == 1
+            assert mapping.note_or_controller == 2
