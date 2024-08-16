@@ -14,7 +14,7 @@ import pytest
 from typeguard import typechecked
 
 from buildable import LiveSet
-from buildable.live_set import GroupTrack, KeyMidiMapping, PrimaryTrack, ReturnTrack
+from buildable.live_set import DuplicatePointeeIdError, GroupTrack, KeyMidiMapping, PrimaryTrack, ReturnTrack
 
 if TYPE_CHECKING:
     import pathlib
@@ -83,7 +83,7 @@ def saved_and_unsaved_sets(live_set: LiveSet) -> Iterable[LiveSet]:
             temp_file.write(output.read())
 
             # Open the file with the specified Live executable.
-            subprocess.run([open_sets_with, temp_file.name])
+            subprocess.run([open_sets_with, temp_file.name], check=False)
     yield saved_live_set
     yield live_set
 
@@ -105,9 +105,10 @@ def assert_live_set_valid(live_set: LiveSet) -> None:
 
     # Next pointee ID should exceed the current max.
     max_pointee_id = max(int(p) for p in pointee_ids)
+    next_pointee_id = live_set._next_pointee_id  # noqa: SLF001
     assert (
-        live_set._next_pointee_id > max_pointee_id
-    ), f"Next pointee ID ({live_set._next_pointee_id}) is less than current max pointee ID ({max_pointee_id})"
+        next_pointee_id > max_pointee_id
+    ), f"Next pointee ID ({next_pointee_id}) is less than current max pointee ID ({max_pointee_id})"
 
     # SendPreBool and TrackSendHolder IDs should be increasing from 0. There are no known issues if the IDs are out of
     # order, but Live's native behavior is to keep them in order.
@@ -551,7 +552,7 @@ def test_simultaneous_duplicate_track_inserts_disallowed(live_12_default_set: pa
     live_set = LiveSet.from_file(live_12_default_set)
     assert len(live_set.primary_tracks) == 4
 
-    with pytest.raises(ValueError):
+    with pytest.raises(DuplicatePointeeIdError):
         # Adding two items with duplicated pointee IDs makes pointee mappings ambiguous, so it's disallowed.
         live_set.insert_primary_tracks([live_set.primary_tracks[0], live_set.primary_tracks[0]])
 
