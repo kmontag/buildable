@@ -228,12 +228,12 @@ class SendsPre(ElementObject):
         self.element.insert(index, new_element)
 
         # Update the ID attributes of elements that come after the inserted element.
-        send_pre_bools = self.send_pre_bools
-        for i in range(index + 1, len(send_pre_bools)):
-            if send_pre_bools[index].id != i - 1:
-                msg = f"Unexpected SendPreBool ID at position {i}: {send_pre_bools[index].id}"
+        for i, send_pre_bool in list(enumerate(self.send_pre_bools))[index + 1 :]:
+            # Sanity check.
+            if send_pre_bool.id != i - 1:
+                msg = f"Unexpected SendPreBool ID at position {i}: {send_pre_bool.id}"
                 raise AssertionError(msg)
-            send_pre_bools[index].id = i
+            send_pre_bool.id = i
 
     def delete_send_pre_bool(self, index: int) -> None:
         send_pre_bools = self.send_pre_bools
@@ -247,8 +247,8 @@ class SendsPre(ElementObject):
         del self.element[index]
 
         # Decrement the ID attributes of the remaining elements.
-        for i in range(index, len(send_pre_bools) - 1):
-            send_pre_bools[i + 1].id -= 1
+        for i, send_pre_bool in list(enumerate(self.send_pre_bools))[index:]:
+            send_pre_bool.id = i
 
     def move_send_pre_bool(self, from_index: int, to_index: int) -> None:
         # Ensure indices are within bounds.
@@ -1057,7 +1057,11 @@ class LiveSet(AbletonDocumentObject):
 
                     next_id_str = str(next_pointee_id)
                     subelement.attrib[id_attribute] = next_id_str
-                    pointee_id_replacements[int(subelement_id_str)] = next_pointee_id
+                    subelement_id = int(subelement_id_str)
+                    if subelement_id in pointee_id_replacements:
+                        msg = f"Duplicate pointee ID on {subelement.tag}: {subelement_id}"
+                        raise ValueError(msg)
+                    pointee_id_replacements[subelement_id] = next_pointee_id
                     next_pointee_id += 1
 
         for element in elements:
