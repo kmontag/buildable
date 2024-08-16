@@ -15,7 +15,7 @@ Currently you can:
 
 - copy tracks/returns from other sets.
 - delete and re-order tracks/returns.
-- add/edit key mappings for many set elements.
+- edit key and MIDI mappings for many set elements.
 
 ## Installation
 
@@ -31,7 +31,7 @@ generate templates from them with something like:
 ```python
 from buildable import LiveSet
 
-# Template bases containing e.g. MIDI/audio tracks.
+# Template bases containing MIDI/audio tracks.
 jam_session = LiveSet.from_file('jam-session-tracks.als')
 composition = LiveSet.from_file('composition-tracks.als')
 
@@ -56,8 +56,10 @@ composition.write_to_file("/path/to/user-library/Templates/Composition.als")
 
 ## Design
 
-Live sets are represented as XML documents, and the `buildable` API mirrors the native document structure
-as closely as possible. This helps with flexibility and robustness, but comes with some caveats:
+Live sets are represented natively as XML documents, and `buildable` objects mirror a subset of the
+native document structure as closely as possible, with helpers for more complex operations like
+copying tracks. XML elements are also exposed directly if you want to go off-piste. This helps with
+flexibility and maintainability, but comes with some caveats:
 
 - spelling mistakes and naming inconsistencies are carried over from the native format.
 - some simple operations require using relatively complex accessors - for example, key/MIDI mappings
@@ -66,5 +68,5 @@ as closely as possible. This helps with flexibility and robustness, but comes wi
 - `buildable` won't stop you from setting values that are semantically valid, but invalid at
   runtime.
 
-The best way to familiarize yourself with the native structure is to examine existing Live sets
-(using e.g. `gunzip -c my-set.als`) and/or look through the `buildable` source code.
+The best way to familiarize yourself with the native document structure is to examine existing Live
+sets (using e.g. `gunzip -c my-set.als`) and/or look through the `buildable` source code.

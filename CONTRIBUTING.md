@@ -1,5 +1,7 @@
 ## Pull Requests
 
+PRs are greatly appreciated.
+
 When submitting a PR, please make sure your commits follow the [Conventional Commits
 spec](https://www.conventionalcommits.org/en/v1.0.0/). PRs will generally be rebased (but not
 squashed) before merging.
