@@ -1,0 +1,40 @@
+# CHANGELOG
+
+## v0.1.0 (2024-08-16)
+
+### Chore
+
+* chore: fix tests on older python versions ([`18951a3`](https://github.com/kmontag/buildable/commit/18951a3301f5ef692b1d9ddb1dec7644610dbfda))
+
+* chore: add .editorconfig ([`4efe486`](https://github.com/kmontag/buildable/commit/4efe4869b2c9f6f2a4590d83db76d2d28dd19a98))
+
+* chore: style fixes ([`d682458`](https://github.com/kmontag/buildable/commit/d6824587d43286cd63b010afa21b637305777f58))
+
+### Ci
+
+* ci: add tests for python 3.8 ([`aeffbb9`](https://github.com/kmontag/buildable/commit/aeffbb90759d580b32b63140367dcfb47254b342))
+
+### Feature
+
+* feat: add key/MIDI mapping support for many high-level elements ([`7c733b4`](https://github.com/kmontag/buildable/commit/7c733b47e56652a3a4b6f51030d4ff492606985f))
+
+### Fix
+
+* fix: fix typing issues and set up semantic release ([`d20eca3`](https://github.com/kmontag/buildable/commit/d20eca341b2a184b2b160940d76f8e229a3788e6))
+
+* fix: preserve misspelling in &#34;ViewStateSesstionTrackWidth&#34; tag
+
+There are a number of misspellings in the Live set schema. We should
+preserve them to keep our API as close as possible to the real XML document. ([`0679c31`](https://github.com/kmontag/buildable/commit/0679c31fac36c3e8df84e2db677a9874740d9806))
+
+### Unknown
+
+* add github workflows ([`52276a3`](https://github.com/kmontag/buildable/commit/52276a3d0af345976c3adb1354cc18a0eda3ad78))
+
+* update README ([`9aba993`](https://github.com/kmontag/buildable/commit/9aba9937f48b0e4f3010c2a1f764331ebfb42bba))
+
+* apply formatting auto-fixes ([`a09aa65`](https://github.com/kmontag/buildable/commit/a09aa657858eeb8b409e8fae7546ca57c0af03ad))
+
+* initial implementation for copying tracks between sets ([`2a5e496`](https://github.com/kmontag/buildable/commit/2a5e4968665b8ca207361341e50598b283b1b362))
+
+* initial package structure ([`fb66813`](https://github.com/kmontag/buildable/commit/fb66813823a93beb2b279809ea7f95cff1dd015f))
