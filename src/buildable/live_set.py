@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 _U = TypeVar("_U")
 
 
+class DuplicatePointeeIdError(ValueError):
+    pass
+
+
 class KeyMidiMapping:
     """Describes a key and/or MIDI mapping for a particular target.
 
@@ -1060,7 +1064,7 @@ class LiveSet(AbletonDocumentObject):
                     subelement_id = int(subelement_id_str)
                     if subelement_id in pointee_id_replacements:
                         msg = f"Duplicate pointee ID on {subelement.tag}: {subelement_id}"
-                        raise ValueError(msg)
+                        raise DuplicatePointeeIdError(msg)
                     pointee_id_replacements[subelement_id] = next_pointee_id
                     next_pointee_id += 1
 
