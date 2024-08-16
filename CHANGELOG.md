@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v0.1.1 (2024-08-16)
+
+### Chore
+
+* chore: remove unnecessary root semantic.yml configuration ([`720e9d2`](https://github.com/kmontag/buildable/commit/720e9d23bd2b828c4b2e793e73f696f727db5875))
+
+* chore: don&#39;t increment major version from 0 automatically ([`8e13622`](https://github.com/kmontag/buildable/commit/8e13622ce6636d473c176f164b5d48eaaf28d707))
+
+### Documentation
+
+* docs: add how-to for PRs and local development ([`459cca4`](https://github.com/kmontag/buildable/commit/459cca405cd9c2495530a2f512ed7c79b6d2cfbc))
+
+### Fix
+
+* fix: remove non-existent quantization mapping on Transport ([`55af70c`](https://github.com/kmontag/buildable/commit/55af70c7cf8c1a46f9658a979d87a56f75ec0712))
+
 ## v0.1.0 (2024-08-16)
 
 ### Chore
