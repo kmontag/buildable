@@ -3,7 +3,12 @@ from __future__ import annotations
 import difflib
 import gzip
 import io
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Sequence, Tuple
+import os
+import subprocess
+import tempfile
+
+# We need to support python back to 3.8, so use pre-PEP-585 imports.
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Sequence, Set, Tuple
 
 import pytest
 from typeguard import typechecked
@@ -13,7 +18,7 @@ from buildable.live_set import GroupTrack, KeyMidiMapping, PrimaryTrack, ReturnT
 
 if TYPE_CHECKING:
     import pathlib
-    from typing import Final
+    from typing import Final, Iterable
 
 
 @pytest.fixture
@@ -47,6 +52,78 @@ def routing_set(datadir: pathlib.Path) -> pathlib.Path:
 @typechecked
 def sends_set(datadir: pathlib.Path) -> pathlib.Path:
     return datadir / "sends.als"
+
+
+# Get a version of the set which has been written to an IO stream, as well as the set as-is. This allows testing that
+# changes are visible both before and after a set has been written to disk.
+#
+# If the OPEN_SETS_WITH environment variable is set to a Live executable path
+# (e.g. OPEN_SETS_WITH="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live"), the set will also be opened in
+# Live from a temporary location on disk. Test execution will be paused until the Live window is closed manually. This
+# allows debugging and validating test cases manually in the actual Live environment.
+def saved_and_unsaved_sets(live_set: LiveSet) -> Iterable[LiveSet]:
+    output = io.BytesIO()
+    live_set.write(output)
+
+    output.seek(0)
+    saved_live_set = LiveSet(output)
+
+    # Open the set for debugging/validation if appropriate.
+    open_sets_with = os.getenv("OPEN_SETS_WITH")
+    if open_sets_with:
+        # Adapted from
+        # https://stackoverflow.com/questions/17726954/py-test-how-to-get-the-current-tests-name-from-the-setup-method.
+        pytest_current_test = os.getenv("PYTEST_CURRENT_TEST")
+        assert pytest_current_test is not None
+        test_name = pytest_current_test.split(":")[-1].split(" ")[0]
+
+        # Create a temporary file.
+        with tempfile.NamedTemporaryFile(prefix=test_name, suffix=".als") as temp_file:
+            output.seek(0)
+            temp_file.write(output.read())
+
+            # Open the file with the specified Live executable.
+            subprocess.run([open_sets_with, temp_file.name])
+    yield saved_live_set
+    yield live_set
+
+
+# Check for some known issues that cause Live to crash or fail to load the set.
+def assert_live_set_valid(live_set: LiveSet) -> None:
+    # No duplicate pointee IDs.
+    pointee_ids: Set[str] = set()
+    for element in live_set.element.iter():
+        if (
+            element.tag in {"AutomationTarget", "Pointee"}
+            or element.tag.startswith("ControllerTargets.")
+            or element.tag.endswith("ModulationTarget")
+        ):
+            element_pointee_id: str | None = element.attrib.get("Id", None)
+            assert element_pointee_id is not None
+            assert element_pointee_id not in pointee_ids, f"Duplicate pointee ID on {element.tag}: {element_pointee_id}"
+            pointee_ids.add(element_pointee_id)
+
+    # Next pointee ID should exceed the current max.
+    max_pointee_id = max(int(p) for p in pointee_ids)
+    assert (
+        live_set._next_pointee_id > max_pointee_id
+    ), f"Next pointee ID ({live_set._next_pointee_id}) is less than current max pointee ID ({max_pointee_id})"
+
+    # SendPreBool and TrackSendHolder IDs should be increasing from 0. There are no known issues if the IDs are out of
+    # order, but Live's native behavior is to keep them in order.
+    expected_length = len(live_set.return_tracks)
+    expected_ids = list(range(expected_length))
+
+    send_pre_bool_ids = [s.id for s in live_set.sends_pre.send_pre_bools]
+    assert (
+        send_pre_bool_ids == expected_ids
+    ), f"Expected SendPreBool IDs to increase from 0 to {expected_length - 1}, but got: {send_pre_bool_ids}"
+
+    for track in (*live_set.primary_tracks, *live_set.return_tracks):
+        track_send_holder_ids = [t.id for t in track.device_chain.mixer.sends.track_send_holders]
+        assert (
+            track_send_holder_ids == expected_ids
+        ), f"Expected TrackSendHolder IDs for track {track} to increase from 0 to {expected_length - 1}, but got {track_send_holder_ids}"
 
 
 @typechecked
@@ -90,36 +167,33 @@ def test_insert_primary_tracks(live_12_default_set: pathlib.Path):
     live_set.insert_primary_tracks(other_live_set.primary_tracks, index=insert_index)
     assert len(live_set.primary_tracks) == total_num_tracks
 
-    output = io.BytesIO()
-    live_set.write(output)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        assert len(modified_live_set.primary_tracks) == total_num_tracks
+        modified_track_ids = [track.id for track in modified_live_set.primary_tracks]
+        expected_track_ids = [
+            *primary_track_ids[:insert_index],
+            *[i + max(primary_track_ids + return_track_ids) + 1 for i in range(len(primary_track_ids))],
+            *primary_track_ids[insert_index:],
+        ]
+        assert (
+            modified_track_ids == expected_track_ids
+        ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
 
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+        modified_tracks_element = modified_live_set.element.find("Tracks")
+        assert modified_tracks_element is not None
 
-    assert len(modified_live_set.primary_tracks) == total_num_tracks
-    modified_track_ids = [track.id for track in modified_live_set.primary_tracks]
-    expected_track_ids = [
-        *primary_track_ids[:insert_index],
-        *[i + max(primary_track_ids + return_track_ids) + 1 for i in range(len(primary_track_ids))],
-        *primary_track_ids[insert_index:],
-    ]
-    assert (
-        modified_track_ids == expected_track_ids
-    ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
+        # Make sure return tracks appear after primary tracks.
+        did_find_return_track = False
+        for track_element in modified_tracks_element:
+            assert track_element.tag in [ReturnTrack.TAG, *[t.TAG for t in PrimaryTrack.types()]]
 
-    modified_tracks_element = modified_live_set.element.find("Tracks")
-    assert modified_tracks_element is not None
+            if track_element.tag == ReturnTrack.TAG:
+                did_find_return_track = True
 
-    # Make sure return tracks appear after primary tracks.
-    did_find_return_track = False
-    for track_element in modified_tracks_element:
-        assert track_element.tag in [ReturnTrack.TAG, *[t.TAG for t in PrimaryTrack.types()]]
+            if did_find_return_track:
+                assert track_element.tag == ReturnTrack.TAG
 
-        if track_element.tag == ReturnTrack.TAG:
-            did_find_return_track = True
-
-        if did_find_return_track:
-            assert track_element.tag == ReturnTrack.TAG
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -139,34 +213,32 @@ def test_insert_return_tracks(live_12_default_set: pathlib.Path):
 
     assert len(live_set.return_tracks) == total_num_tracks
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
-    assert len(modified_live_set.return_tracks) == total_num_tracks
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        assert len(modified_live_set.return_tracks) == total_num_tracks
 
-    modified_track_ids = [track.id for track in modified_live_set.return_tracks]
-    expected_track_ids = [
-        *return_track_ids[:insert_index],
-        *[i + max(primary_track_ids + return_track_ids) + 1 for i in range(len(return_track_ids))],
-        *return_track_ids[insert_index:],
-    ]
-    assert (
-        modified_track_ids == expected_track_ids
-    ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
+        modified_track_ids = [track.id for track in modified_live_set.return_tracks]
+        expected_track_ids = [
+            *return_track_ids[:insert_index],
+            *[i + max(primary_track_ids + return_track_ids) + 1 for i in range(len(return_track_ids))],
+            *return_track_ids[insert_index:],
+        ]
+        assert (
+            modified_track_ids == expected_track_ids
+        ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
 
-    modified_tracks_element = modified_live_set.element.find("Tracks")
-    assert modified_tracks_element is not None
+        modified_tracks_element = modified_live_set.element.find("Tracks")
+        assert modified_tracks_element is not None
 
-    did_find_return_track = False
-    for track_element in modified_tracks_element:
-        assert track_element.tag in [ReturnTrack.TAG, *[t.TAG for t in PrimaryTrack.types()]]
+        did_find_return_track = False
+        for track_element in modified_tracks_element:
+            assert track_element.tag in [ReturnTrack.TAG, *[t.TAG for t in PrimaryTrack.types()]]
 
-        if track_element.tag == ReturnTrack.TAG:
-            did_find_return_track = True
+            if track_element.tag == ReturnTrack.TAG:
+                did_find_return_track = True
 
-        if did_find_return_track:
-            assert track_element.tag == ReturnTrack.TAG
+            if did_find_return_track:
+                assert track_element.tag == ReturnTrack.TAG
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -192,27 +264,25 @@ def test_delete_tracks(sends_set: pathlib.Path):
     live_set.delete_primary_track(1)
     live_set.delete_return_track(1)
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        # Make sure the track deletions were propagated.
+        assert len(modified_live_set.primary_tracks) == 1
+        assert len(modified_live_set.return_tracks) == 1
 
-    # Make sure the track deletions were propagated.
-    assert len(modified_live_set.primary_tracks) == 1
-    assert len(modified_live_set.return_tracks) == 1
+        # Make sure an element was deleted from the SendsPre config.
+        assert len(live_set.sends_pre.send_pre_bools) == 1
 
-    # Make sure an element was deleted from the SendsPre config.
-    assert len(live_set.sends_pre.send_pre_bools) == 1
+        # Make sure a send was deleted for all tracks.
+        for track in (*modified_live_set.primary_tracks, *modified_live_set.return_tracks):
+            assert len(track.device_chain.mixer.sends.track_send_holders) == 1
 
-    # Make sure a send was deleted for all tracks.
-    for track in (*modified_live_set.primary_tracks, *modified_live_set.return_tracks):
-        assert len(track.device_chain.mixer.sends.track_send_holders) == 1
+        # Make sure the correct send was deleted.
+        assert modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.manual > 0.9
 
-    # Make sure the correct send was deleted.
-    assert modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.manual > 0.9
+        assert live_set.sends_pre.send_pre_bools[0].value is True
+        assert live_set.sends_pre.send_pre_bools[0].id == 0
 
-    assert live_set.sends_pre.send_pre_bools[0].value is True
-    assert live_set.sends_pre.send_pre_bools[0].id == 0
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -241,24 +311,22 @@ def test_move_tracks(sends_set: pathlib.Path):
     live_set.move_primary_track(0, 1)
     live_set.move_return_track(0, 1)
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        # Make sure the primary track and associated send were moved.
+        assert all(
+            s.send.manual < 0.1 for s in modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders
+        )
+        second_track = modified_live_set.primary_tracks[1]
+        assert second_track.device_chain.mixer.sends.track_send_holders[1].send.manual > 0.9
+        assert second_track.device_chain.mixer.sends.track_send_holders[0].send.manual < 0.1
 
-    # Make sure the primary track and associated send were moved.
-    assert all(
-        s.send.manual < 0.1 for s in modified_live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders
-    )
-    second_track = modified_live_set.primary_tracks[1]
-    assert second_track.device_chain.mixer.sends.track_send_holders[1].send.manual > 0.9
-    assert second_track.device_chain.mixer.sends.track_send_holders[0].send.manual < 0.1
+        # The first send should have its SendPreBool turned on.
+        assert live_set.sends_pre.send_pre_bools[1].value is True
+        assert live_set.sends_pre.send_pre_bools[0].value is False
 
-    # The first send should have its SendPreBool turned on.
-    assert live_set.sends_pre.send_pre_bools[1].value is True
-    assert live_set.sends_pre.send_pre_bools[0].value is False
+        assert [track.effective_name for track in modified_live_set.return_tracks] == list(reversed(return_track_names))
 
-    assert [track.effective_name for track in modified_live_set.return_tracks] == list(reversed(return_track_names))
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -271,45 +339,44 @@ def test_track_group_ids_updated(groups_set: pathlib.Path):
     next_track_id = max(primary_track_ids + return_track_ids) + 1
     live_set.insert_primary_tracks(live_set.primary_tracks)
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
-    assert len(modified_live_set.primary_tracks) == 2 * len(primary_track_ids)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        assert len(modified_live_set.primary_tracks) == 2 * len(primary_track_ids)
 
-    modified_track_ids = [track.id for track in modified_live_set.primary_tracks]
-    expected_track_ids = [
-        *[i + next_track_id for i in range(len(primary_track_ids))],
-        *primary_track_ids,
-    ]
-    assert (
-        modified_track_ids == expected_track_ids
-    ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
+        modified_track_ids = [track.id for track in modified_live_set.primary_tracks]
+        expected_track_ids = [
+            *[i + next_track_id for i in range(len(primary_track_ids))],
+            *primary_track_ids,
+        ]
+        assert (
+            modified_track_ids == expected_track_ids
+        ), f"Track IDs were not correctly updated: got {modified_track_ids}, expected {expected_track_ids}"
 
-    # The original set contains two groups, one containing 2 midi
-    # tracks and one containing 2 audio tracks.
-    midi_group_index = 0
-    audio_group_index = 3
+        # The original set contains two groups, one containing 2 midi
+        # tracks and one containing 2 audio tracks.
+        midi_group_index = 0
+        audio_group_index = 3
 
-    # Sanity check the names and types of the tracks at these indices in the modified set.
-    for index, name in ((midi_group_index, "Midi Group"), (audio_group_index, "Audio Group")):
-        # The group should appear in both the inserted tracks and the original tracks.
-        for group_track in (
-            modified_live_set.primary_tracks[index],
-            modified_live_set.primary_tracks[len(primary_track_ids) + index],
-        ):
-            assert isinstance(group_track, GroupTrack)
-            assert group_track.user_name == name
+        # Sanity check the names and types of the tracks at these indices in the modified set.
+        for index, name in ((midi_group_index, "Midi Group"), (audio_group_index, "Audio Group")):
+            # The group should appear in both the inserted tracks and the original tracks.
+            for group_track in (
+                modified_live_set.primary_tracks[index],
+                modified_live_set.primary_tracks[len(primary_track_ids) + index],
+            ):
+                assert isinstance(group_track, GroupTrack)
+                assert group_track.user_name == name
 
-    # Check that the tracks' associated group IDs match the expected ones.
-    for base_index in (0, len(primary_track_ids)):
-        midi_group_id = expected_track_ids[base_index + midi_group_index]
-        audio_group_id = expected_track_ids[base_index + audio_group_index]
+        # Check that the tracks' associated group IDs match the expected ones.
+        for base_index in (0, len(primary_track_ids)):
+            midi_group_id = expected_track_ids[base_index + midi_group_index]
+            audio_group_id = expected_track_ids[base_index + audio_group_index]
 
-        for track in modified_live_set.primary_tracks[base_index + 1 :][: audio_group_index - 1]:
-            assert track.track_group_id == midi_group_id
-        for track in modified_live_set.primary_tracks[base_index + audio_group_index + 1 : len(primary_track_ids)]:
-            assert track.track_group_id == audio_group_id
+            for track in modified_live_set.primary_tracks[base_index + 1 :][: audio_group_index - 1]:
+                assert track.track_group_id == midi_group_id
+            for track in modified_live_set.primary_tracks[base_index + audio_group_index + 1 : len(primary_track_ids)]:
+                assert track.track_group_id == audio_group_id
+
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -365,16 +432,14 @@ def test_routings_updated(routing_set: pathlib.Path):
 
     live_set.insert_primary_tracks(live_set.primary_tracks)
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        for routing_attr, expected_targets in expected_routing_targets.items():
+            targets = [getattr(t.device_chain, routing_attr).target for t in modified_live_set.primary_tracks]
+            assert (
+                targets == expected_targets
+            ), f"Incorrect {routing_attr} targets - got {targets}, expected {expected_targets}"
 
-    for routing_attr, expected_targets in expected_routing_targets.items():
-        targets = [getattr(t.device_chain, routing_attr).target for t in modified_live_set.primary_tracks]
-        assert (
-            targets == expected_targets
-        ), f"Incorrect {routing_attr} targets - got {targets}, expected {expected_targets}"
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -416,6 +481,7 @@ def test_sends_inserted(sends_set: pathlib.Path):
         actual_send_values == expected_send_values
     ), f"Unexpected send values in unmodified set: {actual_send_values} (expected {expected_send_values})"
 
+    original_num_return_tracks = len(live_set.return_tracks)
     live_set.insert_tracks(
         # Copy the main track.
         main_track=live_set.main_track,
@@ -423,56 +489,81 @@ def test_sends_inserted(sends_set: pathlib.Path):
         primary_tracks=[live_set.primary_tracks[0]],
         primary_tracks_index=0,
         # Include a duplicated return track.
-        return_tracks=[*live_set.return_tracks, live_set.return_tracks[0]],
+        return_tracks=live_set.return_tracks,
         return_tracks_index=1,
     )
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+    # Add a duplicate of one of the return tracks, this time disconnected from the rest of the group, directly after the
+    # return tracks that were previously inserted.
+    live_set.insert_return_tracks([live_set.return_tracks[0]], 1 + original_num_return_tracks)
 
-    expected_send_values = tuple(
-        # For simplicity, sends in the set are either set to the full min or full max value.
-        tuple(max_send_value if is_max else min_send_value for is_max in is_maxes)
-        for is_maxes in (
-            # Inserted primary track. This should have the send for both inserted instances of return track A (at index
-            # 1 and 3) turned on, and all others turned off.
-            (False, True, False, True, False),
-            # Original primary track 0. This should have the send for the first return track still turned on, and all
-            # others turned off.
-            (True, False, False, False, False),
-            # Original primary track 1. All sends should be off.
-            (False, False, False, False, False),
-            # Original return track A. This should have the send for original return track B (now at the end of the
-            # return track list) turned on.
-            (False, False, False, False, True),
-            # First inserted return track A. This should have the send for the inserted return track B turned on.
-            (False, False, True, False, False),
-            # Inserted return track B. All sends should be off.
-            (False, False, False, False, False),
-            # Second inserted return track A. Should be the same as the first.
-            (False, False, True, False, False),
-            # Original return track B. All sends should be off.
-            (False, False, False, False, False),
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        # Make sure the high/low send values were preserved during each track insertion.
+        expected_send_values = tuple(
+            # For simplicity, sends in the set are either set to the full min or full max value.
+            tuple(max_send_value if is_max else min_send_value for is_max in is_maxes)
+            for is_maxes in (
+                # Inserted primary track. This should have the send for the first inserted instance of return track A
+                # (at index 1) turned on, and all others turned off.
+                (False, True, False, False, False),
+                # Original primary track 0. This should have the send for the first return track still turned on, and all
+                # others turned off.
+                (True, False, False, False, False),
+                # Original primary track 1. All sends should be off.
+                (False, False, False, False, False),
+                # Original return track A. This should have the send for original return track B (now at the end of the
+                # return track list) turned on.
+                (False, False, False, False, True),
+                # First inserted return track A. This should have the send for the inserted return track B turned on.
+                (False, False, True, False, False),
+                # Inserted return track B. All sends should be off.
+                (False, False, False, False, False),
+                # Second inserted return track A. Disconnected from the rest of the tracks, so it should be all off.
+                (False, False, False, False, False),
+                # Original return track B. All sends should be off.
+                (False, False, False, False, False),
+            )
         )
-    )
-    actual_send_values = get_send_manual_values(modified_live_set)
-    assert (
-        actual_send_values == expected_send_values
-    ), f"Unexpected send values in modified set: {actual_send_values} (expected {expected_send_values})"
+        actual_send_values = get_send_manual_values(modified_live_set)
+        assert (
+            actual_send_values == expected_send_values
+        ), f"Unexpected send values in modified set: {actual_send_values} (expected {expected_send_values})"
 
-    # Ensure there are no sends on the main track.
-    assert len(modified_live_set.main_track.device_chain.mixer.sends.track_send_holders) == 0
+        # Ensure there are no sends on the main track.
+        assert len(modified_live_set.main_track.device_chain.mixer.sends.track_send_holders) == 0
 
-    # Ensure TrackSendHolder IDs increase from 0.
-    for track in [*modified_live_set.primary_tracks, *modified_live_set.return_tracks]:
-        assert tuple(
-            track_send_holder.id for track_send_holder in track.device_chain.mixer.sends.track_send_holders
-        ) == (0, 1, 2, 3, 4)
+        # Ensure TrackSendHolder IDs increase from 0.
+        for track in [*modified_live_set.primary_tracks, *modified_live_set.return_tracks]:
+            assert tuple(
+                track_send_holder.id for track_send_holder in track.device_chain.mixer.sends.track_send_holders
+            ) == (0, 1, 2, 3, 4)
 
-    # Ensure that SendsPre states get carried over.
-    assert [t.send_pre for t in live_set.return_tracks] == [True, True, False, True, False]
+        # Ensure that SendsPre states get carried over.
+        assert [t.send_pre for t in modified_live_set.return_tracks] == [True, True, False, True, False]
+
+        assert len(modified_live_set.return_tracks) == 5
+
+        assert_live_set_valid(modified_live_set)
+
+
+@typechecked
+def test_simultaneous_duplicate_track_inserts_disallowed(live_12_default_set: pathlib.Path):
+    live_set = LiveSet.from_file(live_12_default_set)
+    assert len(live_set.primary_tracks) == 4
+
+    with pytest.raises(ValueError):
+        # Adding two items with duplicated pointee IDs makes pointee mappings ambiguous, so it's disallowed.
+        live_set.insert_primary_tracks([live_set.primary_tracks[0], live_set.primary_tracks[0]])
+
+    # Check that duplicate tracks can, however, be inserted in sequence, in different pointee ID translation contexts.
+    live_set = LiveSet.from_file(live_12_default_set)
+
+    live_set.insert_primary_tracks([live_set.primary_tracks[0]])
+    live_set.insert_primary_tracks([live_set.primary_tracks[0]])
+
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        assert len(modified_live_set.primary_tracks) == 6
+        assert_live_set_valid(modified_live_set)
 
 
 @typechecked
@@ -573,27 +664,24 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
             mapping.channel = 1
             mapping.note_or_controller = 2
 
-    output = io.BytesIO()
-    live_set.write(output)
-    output.seek(0)
-    modified_live_set = LiveSet(output)
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        for get_target, mapping_names, updated_key_strings in key_targets_to_process:
+            target = get_target(modified_live_set)
+            for mapping_name in mapping_names:
+                mapping = getattr(target, mapping_name)
+                assert isinstance(mapping, KeyMidiMapping)
 
-    for get_target, mapping_names, updated_key_strings in key_targets_to_process:
-        target = get_target(modified_live_set)
-        for mapping_name in mapping_names:
-            mapping = getattr(target, mapping_name)
-            assert isinstance(mapping, KeyMidiMapping)
+                # Check that the updated mapping was correctly saved.
+                assert (
+                    mapping.persistent_key_string == updated_key_strings[mapping_name]
+                ), f'Incorrect updated key mapping for {mapping_name}: "{mapping.persistent_key_string}" (expected "{updated_key_strings[mapping_name]}")'
 
-            # Check that the updated mapping was correctly saved.
-            assert (
-                mapping.persistent_key_string == updated_key_strings[mapping_name]
-            ), f'Incorrect updated key mapping for {mapping_name}: "{mapping.persistent_key_string}" (expected "{updated_key_strings[mapping_name]}")'
-
-    # Check that the updated MIDI mappings were correctly saved.
-    for get_target, mapping_names in midi_mapping_names_by_target_getter.items():
-        target = get_target(live_set)
-        for mapping_name in mapping_names:
-            mapping = getattr(target, mapping_name)
-            assert isinstance(mapping, KeyMidiMapping)
-            assert mapping.channel == 1
-            assert mapping.note_or_controller == 2
+        # Check that the updated MIDI mappings were correctly saved.
+        for get_target, mapping_names in midi_mapping_names_by_target_getter.items():
+            target = get_target(live_set)
+            for mapping_name in mapping_names:
+                mapping = getattr(target, mapping_name)
+                assert isinstance(mapping, KeyMidiMapping)
+                assert mapping.channel == 1
+                assert mapping.note_or_controller == 2
+        assert_live_set_valid(modified_live_set)
