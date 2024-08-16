@@ -60,12 +60,11 @@ Live sets are represented as XML documents, and the `buildable` API mirrors the 
 as closely as possible. This helps with flexibility and robustness, but comes with some caveats:
 
 - spelling mistakes and naming inconsistencies are carried over from the native format.
-- the document structure and property names aren't always obvious.
 - some simple operations require using relatively complex accessors - for example, key/MIDI mappings
   for sends are accessed using
   e.g. `live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.key_midi`.
 - `buildable` won't stop you from setting values that are semantically valid, but invalid at
   runtime.
 
-The best way to familiarize yourself with the structure is to examine existing Live sets (using
-e.g. `gunzip -c my-set.als`) and/or look through the `buildable` source code.
+The best way to familiarize yourself with the native structure is to examine existing Live sets
+(using e.g. `gunzip -c my-set.als`) and/or look through the `buildable` source code.
