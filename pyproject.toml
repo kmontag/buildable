@@ -93,3 +93,9 @@ extend-ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["buildable"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Tests need to run on python 3.8 and up (including dynamic
+# type-checking via @typechecked), so we need to use pre-PEP-585
+# annotations (e.g. Dict).
+"tests/*" = ["UP006"]

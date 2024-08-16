@@ -3,12 +3,13 @@ from __future__ import annotations
 import difflib
 import gzip
 import io
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Sequence, Tuple
 
 import pytest
 from typeguard import typechecked
 
-from buildable.live_set import GroupTrack, KeyMidiMapping, LiveSet, PrimaryTrack, ReturnTrack
+from buildable import LiveSet
+from buildable.live_set import GroupTrack, KeyMidiMapping, PrimaryTrack, ReturnTrack
 
 if TYPE_CHECKING:
     import pathlib
@@ -68,7 +69,8 @@ def test_formatting(live_12_default_set: pathlib.Path):
             tofile="rendered",
             lineterm="",
         )
-        assert rendered_xml == original_xml, f"Rendered XML differs from original:\n\n{"\n".join(diff)}"
+        diff_str = "\n".join(diff)
+        assert rendered_xml == original_xml, f"Rendered XML differs from original:\n\n{diff_str}"
 
 
 @typechecked
@@ -237,7 +239,7 @@ def test_routings_updated(routing_set: pathlib.Path):
     )
     next_track_id = max(primary_track_ids + return_track_ids) + 1
 
-    expected_routing_targets: dict[str, list[str]] = {
+    expected_routing_targets: Dict[str, List[str]] = {
         routing_attr: [getattr(t.device_chain, routing_attr).target for t in live_set.primary_tracks] * 2
         for routing_attr in ("audio_input_routing", "audio_output_routing", "midi_input_routing", "midi_output_routing")
     }
@@ -249,7 +251,7 @@ def test_routings_updated(routing_set: pathlib.Path):
         ("midi_input_routing", 1, 2, "MidiIn/External.All/-1"),
         ("midi_output_routing", 0, 2, "MidiOut/None"),
     ):
-        targets: list[str] = expected_routing_targets[routing_attr]
+        targets: List[str] = expected_routing_targets[routing_attr]
         original_source_track_index = source_track_index + len(live_set.primary_tracks)
 
         # Ensure that the default routing shows up on everything other
@@ -387,7 +389,7 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
 
     # Mapping names for various targets which are mapped to keys in the test set. For simplicity, we use keys rather
     # than MIDI for almost every mapping; MIDI is tested with a more limited set of mappings below.
-    key_mapping_names_by_target_getter: dict[Callable[[LiveSet], Any], tuple[str, ...]] = {
+    key_mapping_names_by_target_getter: Mapping[Callable[[LiveSet], Any], Sequence[str]] = {
         # Mapping names are listed in the order they appear in the "Key Mappings" pane whne sorting by path.
         lambda s: s: (
             # This shows up under "Transport" in the UI.
@@ -434,7 +436,7 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
         ),
     }
 
-    midi_mapping_names_by_target_getter: dict[Callable[[LiveSet], Any], tuple[str, ...]] = {
+    midi_mapping_names_by_target_getter: Mapping[Callable[[LiveSet], Any], Sequence[str]] = {
         lambda s: s.main_track.device_chain.mixer.tempo: ("key_midi",),
         lambda s: s.pre_hear_track.device_chain.mixer.volume: ("key_midi",),
     }
@@ -445,7 +447,7 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
     original_to_updated_keys: Final = {"a": "x", "b": "y", "c": "z"}
 
     # List of targets, mapping names, and a dictionary of mapping name -> updated key string.
-    key_targets_to_process: Sequence[tuple[Any, Sequence[str], dict[str, str]]] = [
+    key_targets_to_process: Sequence[Tuple[Any, Sequence[str], Dict[str, str]]] = [
         (target, mapping_names, {}) for target, mapping_names in key_mapping_names_by_target_getter.items()
     ]
 

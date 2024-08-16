@@ -59,8 +59,8 @@ composition.write_to_file("/path/to/user-library/Templates/Composition.als")
 Live sets are represented as XML documents, and the `buildable` API mirrors the native document structure
 as closely as possible. This helps with flexibility and robustness, but comes with some caveats:
 
-- spelling mistakes and naming inconsistencies are carried over from the native format
-- property names aren't always obvious
+- spelling mistakes and naming inconsistencies are carried over from the native format.
+- the document structure and property names aren't always obvious.
 - some simple operations require using relatively complex accessors - for example, key/MIDI mappings
   for sends are accessed using
   e.g. `live_set.primary_tracks[0].device_chain.mixer.sends.track_send_holders[0].send.key_midi`.
