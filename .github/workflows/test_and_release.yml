@@ -90,9 +90,9 @@ jobs:
 
       # Publishing steps adapted from
       # https://python-semantic-release.readthedocs.io/en/latest/migrating_from_v7.html#removal-of-pypi-token-repository-username-and-repository-password-inputs.
-      - name: Update package version if needed
+      - name: Semantic Release
         id: release
-        uses: python-semantic-release/python-semantic-release@v9.8.3
+        uses: python-semantic-release/python-semantic-release@v9.8.6
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 

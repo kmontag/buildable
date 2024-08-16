@@ -396,13 +396,13 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
             "global_quantisation_key_midi",
         ),
         lambda s: s.main_track: (
+            "key_midi_crossfade_equal",
+            "key_midi_tempo_fine",
             "key_midi_fire_selected_scene",
             "key_midi_cancel_launch",
             "key_midi_scene_up",
             "key_midi_scene_down",
             "key_midi_scroll_selected_scene",
-            "key_midi_crossfade_equal",
-            "key_midi_tempo_fine",
         ),
         lambda s: s.main_track.device_chain.mixer: (
             "stop_key_midi",  # Stop clips.

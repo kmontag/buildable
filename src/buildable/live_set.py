@@ -12,9 +12,12 @@ from .base import AbletonDocumentObject, ElementObject, GenericProperty, child_e
 from .util import override
 
 if TYPE_CHECKING:
-    from typing import BinaryIO, Final, Self, Sequence
+    from typing import BinaryIO, Final, Sequence
 
     from lxml.etree import _Element
+
+    # Introduced in 3.11.
+    from typing_extensions import Self
 
 
 _U = TypeVar("_U")

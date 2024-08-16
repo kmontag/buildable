@@ -9,9 +9,12 @@ from lxml.etree import ElementTree, tostring
 
 if TYPE_CHECKING:
     import os
-    from typing import Any, BinaryIO, Callable, Final, Self
+    from typing import Any, BinaryIO, Callable, Final
 
     from lxml.etree import _Element
+
+    # Introduced in 3.11.
+    from typing_extensions import Self
 
 _E = TypeVar("_E", bound="ElementObject")
 _T = TypeVar("_T")
@@ -102,7 +105,8 @@ class AbletonDocumentObject:
     def __init__(self, data: BinaryIO) -> None:
         with gzip.GzipFile(fileobj=data) as gzipped_file:
             self._element_tree = ElementTree()
-            self._element_tree.parse(gzipped_file)
+            # The type checker doesn't realize this is a valid call.
+            self._element_tree.parse(gzipped_file)  # type: ignore
 
         root = self._element_tree.getroot()
 
