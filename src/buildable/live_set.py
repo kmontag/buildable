@@ -529,12 +529,43 @@ class Transport(ElementObject):
         return self.element
 
 
-class CrossFade(ModulableElementObject):
-    TAG = "CrossFade"
+class Locators(ElementObject):
+    # Note - the main Locators tag also contains a sub-tag with the same name, but a different schema (not yet
+    # explored).
+    TAG = "Locators"
+
+    @key_midi_mapping()
+    def next_locator_mapping(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def previous_locator_mapping(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def set_locator_mapping(self) -> _Element:
+        return self.element
+
+
+# Note - this exists on the main track, but as an AutomatableElementObject.
+class CrossFadeState(ModulableElementObject):
+    """Modulable element for an individual track's A/B crossfade assignment."""
+
+    TAG = "CrossFadeState"
 
 
 class GlobalGrooveAmount(ModulableElementObject):
     TAG = "GlobalGrooveAmount"
+
+
+class Pan(ModulableElementObject):
+    TAG = "Pan"
+
+
+class Speaker(ModulableElementObject):
+    """Modulable element for the track speaker (i.e. mute) status."""
+
+    TAG = "Speaker"
 
 
 class TimeSignature(AutomatableElementObject):
@@ -552,10 +583,27 @@ class Volume(ModulableElementObject):
 class Mixer(ElementObject):
     TAG = "Mixer"
 
-    # Properties that only appear on primary/return tracks.
+    @child_element_object_property(property_type=Pan)
+    def pan(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=Volume)
+    def volume(self) -> _Element:
+        return self.element
+
+    # Properties that only appear on primary/return tracks, or which appear on the main track but as stripped-down
+    # versions.
+
+    @child_element_object_property(property_type=CrossFadeState)
+    def cross_fade_state(self) -> _Element:
+        return self.element
 
     @child_element_object_property(property_type=Sends)
     def sends(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=Speaker)
+    def speaker(self) -> _Element:
         return self.element
 
     # Properties that only appear on the main track.
@@ -564,22 +612,35 @@ class Mixer(ElementObject):
     def global_groove_amount(self) -> _Element:
         return self.element
 
-    @key_midi_mapping()
-    def stop_key_midi(self) -> _Element:
-        return self.element
-
     @child_element_object_property(property_type=Tempo)
     def tempo(self) -> _Element:
+        return self.element
+
+    # Key/MIDI mappings.
+
+    @key_midi_mapping()
+    def arm_key_midi(self) -> _Element:
+        return self.element
+
+    @key_midi_mapping()
+    def head_key_midi(self) -> _Element:
+        """Mapping for the track's solo/cue button."""
+        return self.element
+
+    @key_midi_mapping()
+    def monitor_key_midi(self) -> _Element:
+        """Mapping for the track monitor state (In/Auto/Off)."""
+        return self.element
+
+    @key_midi_mapping()
+    def stop_key_midi(self) -> _Element:
+        """Mapping for the stop clips button."""
         return self.element
 
     @xml_property(attrib="Value", property_type=int)
     def view_state_sesstion_track_width(self) -> _Element:
         # [sic]
         return _presence(self.element.find("ViewStateSesstionTrackWidth"))
-
-    @child_element_object_property(property_type=Volume)
-    def volume(self) -> _Element:
-        return self.element
 
 
 class DeviceChain(ElementObject):
@@ -639,6 +700,11 @@ class MixerTrack(Track):
     @xml_property(attrib="Value", property_type=int)
     def track_group_id(self) -> _Element:
         return _presence(self.element.find("TrackGroupId"))
+
+    @key_midi_mapping()
+    def key_midi_track_pie(self) -> _Element:
+        """Mapping for the track status indicator."""
+        return self.element
 
 
 class PrimaryTrack(MixerTrack):
@@ -766,6 +832,10 @@ class LiveSet(AbletonDocumentObject):
             for index, track in enumerate(t for t in self._tracks_element if t.tag == ReturnTrack.TAG)
         ]
 
+    @child_element_object_property(property_type=Locators)
+    def locators(self) -> _Element:
+        return self._element
+
     @child_element_object_property(property_type=PreHearTrack)
     def pre_hear_track(self) -> _Element:
         return self._element
@@ -779,7 +849,31 @@ class LiveSet(AbletonDocumentObject):
         return self._element
 
     @key_midi_mapping()
+    def automation_mode_button_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def fit_all_tracks_to_screen_height_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def fit_song_to_screen_width_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
     def global_quantisation_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def is_waveform_vertical_zoom_active_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def lock_envelope_key_midi(self) -> _Element:
+        return self._element
+
+    @key_midi_mapping()
+    def waveform_vertical_zoom_factor_key_midi(self) -> _Element:
         return self._element
 
     @xml_property(attrib="Value", property_type=int)

@@ -576,11 +576,21 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
     key_mapping_names_by_target_getter: Mapping[Callable[[LiveSet], Any], Sequence[str]] = {
         # Mapping names are listed in the order they appear in the "Key Mappings" pane whne sorting by path.
         lambda s: s: (
-            # This shows up under "Transport" in the UI.
-            "global_quantisation_key_midi",
+            "fit_song_to_screen_width_key_midi",  # Appears under "Arrangement".
+            "fit_all_tracks_to_screen_height_key_midi",  # Appears under "Arrangement".
+            "automation_mode_button_key_midi",  # Appears under "Arrangement".
+            "is_waveform_vertical_zoom_active_key_midi",  # Appears as "Waveform Zoom / On/Off".
+            "waveform_vertical_zoom_factor_key_midi",  # Appears as "Waveform Zoom / Gain".
+            "lock_envelope_key_midi",  # Appears under "Arrangement".
+            "global_quantisation_key_midi",  # Appears under "Transport".
+        ),
+        lambda s: s.locators: (
+            "set_locator_mapping",
+            "next_locator_mapping",
+            "previous_locator_mapping",
         ),
         lambda s: s.main_track: (
-            "key_midi_crossfade_equal",
+            "key_midi_crossfade_equal",  # Main set crossfade bar.
             "key_midi_tempo_fine",
             "key_midi_fire_selected_scene",
             "key_midi_cancel_launch",
@@ -592,7 +602,22 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
             "stop_key_midi",  # Stop clips.
         ),
         lambda s: s.main_track.device_chain.mixer.global_groove_amount: ("key_midi",),
-        lambda s: s.return_tracks[0].device_chain.mixer.sends.track_send_holders[0].send: ("key_midi",),
+        lambda s: s.main_track.device_chain.mixer.pan: ("key_midi",),
+        lambda s: s.primary_tracks[-1]: (
+            "key_midi_track_pie",  # Track status.
+        ),
+        lambda s: s.primary_tracks[-1].device_chain.mixer: (
+            "arm_key_midi",
+            "monitor_key_midi",
+        ),
+        lambda s: s.return_tracks[-1].device_chain.mixer: (
+            "head_key_midi",  # Solo/cue.
+        ),
+        lambda s: s.return_tracks[-1].device_chain.mixer.cross_fade_state: (
+            "key_midi",  # A/B crossfade selector.
+        ),
+        lambda s: s.return_tracks[-1].device_chain.mixer.sends.track_send_holders[0].send: ("key_midi",),
+        lambda s: s.return_tracks[-1].device_chain.mixer.speaker: ("key_midi",),
         lambda s: s.transport: (
             "phase_nudge_up_key_midi",
             "phase_nudge_down_key_midi",
