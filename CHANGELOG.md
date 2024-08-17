@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## v0.4.0 (2024-08-17)
+
+### Chore
+
+* chore: test accessing session track width ([`05b94a5`](https://github.com/kmontag/buildable/commit/05b94a5c98768a22ca16fd7c5da83937d7addcd7))
+
+* chore: remove stray directory ([`33c60b2`](https://github.com/kmontag/buildable/commit/33c60b2cb698edb31ea68de628f1eaa46c68cf3e))
+
+### Ci
+
+* ci: temporarily disable codecov action
+
+workaround for https://github.com/codecov/codecov-action/issues/1547 ([`65a28d2`](https://github.com/kmontag/buildable/commit/65a28d2a6b46ab4eb8a30e6f56de0e6e24b19398))
+
+* ci: require coverage to succeed before publishing ([`0451e07`](https://github.com/kmontag/buildable/commit/0451e078a2f7988d257729eed899c7381f02c97e))
+
+### Documentation
+
+* docs: fix typo ([`61347e7`](https://github.com/kmontag/buildable/commit/61347e714b6ec376306d02963105ffb426ad9f83))
+
+### Feature
+
+* feat: add AutomationLanes and the highlighted track index ([`40a9952`](https://github.com/kmontag/buildable/commit/40a995290905da59e7567ffad5d28799080bc553))
+
 ## v0.3.0 (2024-08-17)
 
 ### Feature
