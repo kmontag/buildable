@@ -16,6 +16,7 @@ Currently you can:
 - copy tracks/returns from other sets.
 - delete and re-order tracks/returns.
 - edit key and MIDI mappings for many set elements.
+- set some high-level view properties, like the session/arrangement state.
 
 ## Installation
 
@@ -49,6 +50,9 @@ for template_set in (jam_session, composition):
 # Assign crossfader to the mod wheel on MIDI channel 1.
 jam_session.main_track.key_midi_crossfade_equal.channel = 0
 jam_session.main_track.key_midi.crossfade_equal.note_or_controller = 1
+
+# Switch to arrangment view.
+composition.chooser_bar = LiveSet.CHOOSER_BAR_ARRANGEMENT
 
 jam_session.write_to_file("/path/to/user-library/Templates/JamSession.als")
 composition.write_to_file("/path/to/user-library/Templates/Composition.als")

@@ -711,3 +711,31 @@ def test_key_midi_mappings(key_midi_mappings_set: pathlib.Path):
                 assert mapping.channel == 1
                 assert mapping.note_or_controller == 2
         assert_live_set_valid(modified_live_set)
+
+
+@typechecked
+def test_view_properties(live_12_default_set: pathlib.Path):
+    live_set = LiveSet.from_file(live_12_default_set)
+
+    # Sanity check.
+    assert LiveSet.CHOOSER_BAR_SESSION != LiveSet.CHOOSER_BAR_ARRANGEMENT
+
+    # First, just check that the view properties can be accessed without errors.
+    for prop, expected_value in (
+        ("chooser_bar", LiveSet.CHOOSER_BAR_SESSION),
+        ("view_state_main_window_clip_detail_open", False),
+        ("view_state_main_window_device_detail_open", True),
+        ("view_state_main_window_hidden_other_doc_view_type_clip_detail_open", False),
+        ("view_state_main_window_hidden_other_doc_view_type_device_detail_open", True),
+        ("view_state_second_window_clip_detail_open", True),
+        ("view_state_second_window_device_detail_open", False),
+    ):
+        value = getattr(live_set, prop)
+        assert value == expected_value, f"Expected {prop} to be {expected_value}, but was {value}"
+
+    # Change one property and make sure it gets saved.
+    live_set.chooser_bar = LiveSet.CHOOSER_BAR_ARRANGEMENT
+
+    for modified_live_set in saved_and_unsaved_sets(live_set):
+        assert modified_live_set.chooser_bar == LiveSet.CHOOSER_BAR_ARRANGEMENT
+        assert_live_set_valid(modified_live_set)

@@ -791,6 +791,9 @@ class PreHearTrack(Track):
 class LiveSet(AbletonDocumentObject):
     ELEMENT_TAG: Final[str] = "LiveSet"
 
+    CHOOSER_BAR_ARRANGEMENT: Final[int] = 0
+    CHOOSER_BAR_SESSION: Final[int] = 1
+
     @override
     def __init__(self, data: BinaryIO) -> None:
         super().__init__(data)
@@ -875,6 +878,39 @@ class LiveSet(AbletonDocumentObject):
     @key_midi_mapping()
     def waveform_vertical_zoom_factor_key_midi(self) -> _Element:
         return self._element
+
+    ## View state properties.
+
+    @xml_property(attrib="Value", property_type=int)
+    def chooser_bar(self) -> _Element:
+        """Selector for arrangment (0) or session (1) view."""
+        return _presence(self._element.find("ChooserBar"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_main_window_clip_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateMainWindowClipDetailOpen"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_main_window_device_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateMainWindowDeviceDetailOpen"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_main_window_hidden_other_doc_view_type_clip_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateMainWindowHiddenOtherDocViewTypeClipDetailOpen"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_main_window_hidden_other_doc_view_type_device_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateMainWindowHiddenOtherDocViewTypeDeviceDetailOpen"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_second_window_clip_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateSecondWindowClipDetailOpen"))
+
+    @xml_property(attrib="Value", property_type=bool)
+    def view_state_second_window_device_detail_open(self) -> _Element:
+        return _presence(self._element.find("ViewStateSecondWindowDeviceDetailOpen"))
+
+    ## End view state properties
 
     @xml_property(attrib="Value", property_type=int)
     def _next_pointee_id(self) -> _Element:
