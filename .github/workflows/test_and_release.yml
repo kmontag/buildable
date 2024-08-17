@@ -74,7 +74,9 @@ jobs:
 
     # Make sure tests pass before running.
     needs:
+      # Don't publish unless everything else succeeded.
       - validate
+      - coverage
 
     permissions:
       id-token: write
