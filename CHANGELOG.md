@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.3.0 (2024-08-17)
+
+### Feature
+
+* feat: add some view state properties ([`eb0b957`](https://github.com/kmontag/buildable/commit/eb0b957b5721cd8f834c81edcf03bb2f50cd7675))
+
+* feat: add more key/MIDI mappings ([`f5eba3f`](https://github.com/kmontag/buildable/commit/f5eba3f292aca2055cbd7f4df1f1c236f1a61d75))
+
 ## v0.2.0 (2024-08-16)
 
 ### Chore
