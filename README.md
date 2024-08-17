@@ -51,7 +51,7 @@ for template_set in (jam_session, composition):
 jam_session.main_track.key_midi_crossfade_equal.channel = 0
 jam_session.main_track.key_midi.crossfade_equal.note_or_controller = 1
 
-# Switch to arrangment view.
+# Switch to arrangement view.
 composition.chooser_bar = LiveSet.CHOOSER_BAR_ARRANGEMENT
 
 jam_session.write_to_file("/path/to/user-library/Templates/JamSession.als")
