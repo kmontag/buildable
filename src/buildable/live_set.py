@@ -643,6 +643,39 @@ class Mixer(ElementObject):
         return _presence(self.element.find("ViewStateSesstionTrackWidth"))
 
 
+class AutomationLane(ElementObject):
+    TAG = "AutomationLane"
+
+    @xml_property(attrib="Value", property_type=int)
+    def is_content_selected_in_document(self) -> _Element:
+        return _presence(self.element.find("IsContentSelectedInDocument"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def lane_height(self) -> _Element:
+        return _presence(self.element.find("LaneHeight"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def selected_device(self) -> _Element:
+        return _presence(self.element.find("SelectedDevice"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def selected_envelope(self) -> _Element:
+        return _presence(self.element.find("SelectedEnvelope"))
+
+
+class AutomationLanes(ElementObject):
+    TAG = "AutomationLanes"
+
+    def are_additional_automation_lanes_folded(self) -> _Element:
+        return _presence(self.element.find("AreAdditionalAutomationLanesFolded"))
+
+    @property
+    def automation_lanes(self) -> Sequence[AutomationLane]:
+        # There's an inner AutomationLanes tag which contains the actual lane objects.
+        automation_lanes_child = _presence(self.element.find("AutomationLanes"))
+        return tuple(AutomationLane(el) for el in automation_lanes_child)
+
+
 class DeviceChain(ElementObject):
     TAG = "DeviceChain"
 
@@ -652,6 +685,10 @@ class DeviceChain(ElementObject):
 
     @child_element_object_property(property_type=AudioOutputRouting)
     def audio_output_routing(self) -> _Element:
+        return self.element
+
+    @child_element_object_property(property_type=AutomationLanes)
+    def automation_lanes(self) -> _Element:
         return self.element
 
     @child_element_object_property(property_type=MidiInputRouting)
@@ -885,6 +922,10 @@ class LiveSet(AbletonDocumentObject):
     def chooser_bar(self) -> _Element:
         """Selector for arrangment (0) or session (1) view."""
         return _presence(self._element.find("ChooserBar"))
+
+    @xml_property(attrib="Value", property_type=int)
+    def highlighted_track_index(self) -> _Element:
+        return _presence(self._element.find("HighlightedTrackIndex"))
 
     @xml_property(attrib="Value", property_type=bool)
     def view_state_main_window_clip_detail_open(self) -> _Element:

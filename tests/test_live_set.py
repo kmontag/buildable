@@ -735,7 +735,11 @@ def test_view_properties(live_12_default_set: pathlib.Path):
 
     for track in (*live_set.primary_tracks, *live_set.return_tracks):
         track_width = track.device_chain.mixer.view_state_sesstion_track_width
-        assert track_width == 93, f"Unexpected track_width value: {track_width}"
+        assert track_width == 93, f"Unexpected track width: {track_width}"
+
+    for track in live_set.primary_tracks:
+        track_height = track.device_chain.automation_lanes.automation_lanes[0].lane_height
+        assert track_height == 68, f"Unexpected track height: {track_height}"
 
     # Change one property and make sure it gets saved.
     live_set.chooser_bar = LiveSet.CHOOSER_BAR_ARRANGEMENT
