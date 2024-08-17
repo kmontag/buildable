@@ -733,6 +733,10 @@ def test_view_properties(live_12_default_set: pathlib.Path):
         value = getattr(live_set, prop)
         assert value == expected_value, f"Expected {prop} to be {expected_value}, but was {value}"
 
+    for track in (*live_set.primary_tracks, *live_set.return_tracks):
+        track_width = track.device_chain.mixer.view_state_sesstion_track_width
+        assert track_width == 93, f"Unexpected track_width value: {track_width}"
+
     # Change one property and make sure it gets saved.
     live_set.chooser_bar = LiveSet.CHOOSER_BAR_ARRANGEMENT
 
